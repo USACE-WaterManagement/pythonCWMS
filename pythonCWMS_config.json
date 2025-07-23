@@ -1,13 +1,13 @@
 {
-  "python_download_url": "https://github.com/OWNER/REPO/releases/download/VERSION/ARCHIVE",
-  "python_expected_hash_sha256": "WILL_BE_UPDATED_BY_CI",
-  "default_install_directory": "C:\\hec\\python", 
+  "python_download_url": "https://github.com/msweier/pythonCWMS/releases/download/v0.8.2/pythonCWMS0.8.2.7z",
+  "python_expected_hash_sha256": "DCCEA467D6D2CCD41AD206E88F03961BDD9E047FB5FED936EF81E5E297588A59",
+  "default_install_directory": "C:\\hec\\python",
   "default_env_var_name": "PYTHON_CWMS_HOME",
-  "python_exe_sub_directory": "WINPYTHON_DIR\\python",
-  "version": "WILL_BE_UPDATED_BY_CI",
-  "archive_filename": "WILL_BE_UPDATED_BY_CI",
-  "archive_size_mb": 0,
-  "created_date": "WILL_BE_UPDATED_BY_CI",
-  "source_winpython_version": "WILL_BE_UPDATED_BY_CI",
-  "source_winpython_filename": "WILL_BE_UPDATED_BY_CI"
+  "python_exe_sub_directory": "WPy64-312101\\python",
+  "version": "0.8.2",
+  "archive_filename": "pythonCWMS0.8.2.7z",
+  "archive_size_mb": 127.71,
+  "created_date": "2025-07-23T14:58:25Z",
+  "source_winpython_version": "16.6.20250620final",
+  "source_winpython_filename": "Winpython64-3.12.10.1dot.zip"
 }
