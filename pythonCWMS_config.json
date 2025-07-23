@@ -1,0 +1,13 @@
+{
+  "python_download_url": "https://github.com/OWNER/REPO/releases/download/VERSION/ARCHIVE",
+  "python_expected_hash_sha256": "WILL_BE_UPDATED_BY_CI",
+  "default_install_directory": "C:\\hec\\python", 
+  "default_env_var_name": "PYTHON_CWMS_HOME",
+  "python_exe_sub_directory": "WINPYTHON_DIR\\python",
+  "version": "WILL_BE_UPDATED_BY_CI",
+  "archive_filename": "WILL_BE_UPDATED_BY_CI",
+  "archive_size_mb": 0,
+  "created_date": "WILL_BE_UPDATED_BY_CI",
+  "source_winpython_version": "WILL_BE_UPDATED_BY_CI",
+  "source_winpython_filename": "WILL_BE_UPDATED_BY_CI"
+}

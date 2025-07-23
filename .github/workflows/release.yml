@@ -11,16 +11,18 @@ on:
         required: true
         default: '0.8'
 
+# Permissions for creating releases
+permissions:
+  contents: write
+  packages: write
+  actions: read
+
 env:
   # WinPython Configuration - Update these variables as needed
   WINPYTHON_VERSION: "16.6.20250620final"
   WINPYTHON_FILENAME: "Winpython64-3.12.10.1dot.zip"
   WINPYTHON_DOWNLOAD_URL: "https://github.com/winpython/winpython/releases/download/16.6.20250620final/Winpython64-3.12.10.1dot.zip"
   
-  # Alternative: You can also construct the URL from parts
-  # WINPYTHON_BASE_URL: "https://github.com/winpython/winpython/releases/download"
-  # Full URL would be: ${{ env.WINPYTHON_BASE_URL }}/${{ env.WINPYTHON_VERSION }}/${{ env.WINPYTHON_FILENAME }}
-
 jobs:
   build:
     runs-on: windows-latest
@@ -207,7 +209,7 @@ jobs:
         echo "ARCHIVE_HASH=$hashString" >> $env:GITHUB_ENV
         Write-Host "✓ SHA256: $hashString"
 
-    - name: Generate config JSON
+    - name: Update and commit config JSON
       run: |
         $repoOwner = "${{ github.repository_owner }}"
         $repoName = "${{ github.event.repository.name }}"
@@ -215,40 +217,54 @@ jobs:
         $archiveName = "${{ env.ARCHIVE_NAME }}"
         $hash = "${{ env.ARCHIVE_HASH }}"
         $winpythonSubDir = "${{ env.WINPYTHON_SUBDIR }}"
-        $winpythonVersion = "${{ env.WINPYTHON_VERSION }}"
-        $winpythonFilename = "${{ env.WINPYTHON_FILENAME }}"
         
-        Write-Host "Generating configuration file..."
+        Write-Host "Updating configuration file..."
         
-        # Construct the download URL
-        $downloadUrl = "https://github.com/$repoOwner/$repoName/releases/download/v$version/$archiveName"
-        
-        # The python subdirectory is simply "python"
-        $pythonExeSubDir = "$winpythonSubDir\python"
-        
-        Write-Host "Python executable subdirectory: $pythonExeSubDir"
-        
-        # Create the config object
-        $config = @{
-            python_download_url = $downloadUrl
-            python_expected_hash_sha256 = $hash
-            default_install_directory = "C:\hec\python"
-            default_env_var_name = "PYTHON_CWMS_HOME" 
-            python_exe_sub_directory = $pythonExeSubDir
-            version = $version
-            archive_filename = $archiveName
-            archive_size_mb = [math]::Round((Get-Item "${{ env.ARCHIVE_NAME }}").Length / 1MB, 2)
-            created_date = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
-            source_winpython_version = $winpythonVersion
-            source_winpython_filename = $winpythonFilename
+        # Read existing config or create new one
+        if (Test-Path "pythonCWMS_config.json") {
+          $config = Get-Content "pythonCWMS_config.json" | ConvertFrom-Json
+          Write-Host "✓ Found existing config file"
+        } else {
+          $config = @{}
+          Write-Host "⚠️ No existing config file, creating new one"
         }
         
-        # Convert to JSON and save
+        # Update all values
+        $config.python_download_url = "https://github.com/$repoOwner/$repoName/releases/download/v$version/$archiveName"
+        $config.python_expected_hash_sha256 = $hash
+        $config.default_install_directory = "C:\hec\python"
+        $config.default_env_var_name = "PYTHON_CWMS_HOME"
+        $config.python_exe_sub_directory = "$winpythonSubDir\python"
+        $config.version = $version
+        $config.archive_filename = $archiveName
+        $config.archive_size_mb = [math]::Round((Get-Item $archiveName).Length / 1MB, 2)
+        $config.created_date = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+        $config.source_winpython_version = "${{ env.WINPYTHON_VERSION }}"
+        $config.source_winpython_filename = "${{ env.WINPYTHON_FILENAME }}"
+        
+        # Save updated config
         $configJson = $config | ConvertTo-Json -Depth 10
         $configJson | Out-File -FilePath "pythonCWMS_config.json" -Encoding UTF8
         
-        Write-Host "✓ Generated config file:"
+        Write-Host "✓ Updated config file:"
         Get-Content "pythonCWMS_config.json"
+        
+        # Configure git and commit
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add pythonCWMS_config.json
+        
+        if (-not (git diff --staged --quiet)) {
+          git commit -m "Update config for release $version [skip ci]"
+          git push origin HEAD:main
+          Write-Host "✓ Updated and committed config file to repository"
+        } else {
+          Write-Host "No changes to config file"
+        }
+        
+        # Also copy to final directory for inclusion in archive
+        Copy-Item -Path "pythonCWMS_config.json" -Destination "${{ env.FINAL_DIR }}\pythonCWMS_config.json"
+        Write-Host "✓ Copied config file to final directory"
 
     - name: Validate config file
       run: |
@@ -261,6 +277,7 @@ jobs:
           Write-Host "✓ Hash: $($config.python_expected_hash_sha256)"
           Write-Host "✓ Python exe path: $($config.python_exe_sub_directory)"
           Write-Host "✓ Source WinPython: $($config.source_winpython_filename)"
+          Write-Host "✓ Archive size: $($config.archive_size_mb) MB"
         }
         catch {
           Write-Error "❌ Config JSON is invalid: $_"
