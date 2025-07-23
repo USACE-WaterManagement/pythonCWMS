@@ -31,7 +31,7 @@ Click `Save/Run` to launch the installer.
 
 ![alt text](./screenshots/image-5.png)
 
-Click `Install Portable Python` to install.
+Click `Install Portable Python` to install. Please be patient, it may take up to 10 minutes to install.
 
 ### General Usage
 - Use `pythonCWMS` in the command line to run python.
