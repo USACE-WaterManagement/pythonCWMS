@@ -21,7 +21,7 @@ Make a new script in the CAVI called `install_python`.
 ![alt text](./screenshots/image-2.png)
 ![alt text](./screenshots/image-3.png)
 
-Go to the [install_python.py] (./jython_scripts/install_python.py) script in the `jython_scripts` folder and copy the raw script.
+Go to the ![install_python.py] (./jython_scripts/install_python.py) script in the `jython_scripts` folder and copy the raw script.
 ![alt text](./screenshots/image-1.png)
 
 Paste the script into the script window.
