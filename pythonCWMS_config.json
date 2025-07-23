@@ -3,7 +3,7 @@
   "python_expected_hash_sha256": "DCCEA467D6D2CCD41AD206E88F03961BDD9E047FB5FED936EF81E5E297588A59",
   "default_install_directory": "C:\\hec\\python",
   "default_env_var_name": "PYTHON_CWMS_HOME",
-  "python_exe_sub_directory": "WPy64-312101\\python",
+  "python_exe_sub_directory": "pythonCWMS0.8.2\\python",
   "version": "0.8.2",
   "archive_filename": "pythonCWMS0.8.2.7z",
   "archive_size_mb": 127.71,
