@@ -176,7 +176,41 @@ jobs:
         $winpythonSubDir = $winpythonDir.Name
         echo "WINPYTHON_SUBDIR=$winpythonSubDir" >> $env:GITHUB_ENV
         Write-Host "WinPython subdirectory: $winpythonSubDir"
+    
+    - name: Create pythonCWMS.bat launcher
+      run: |
+        $finalDir = "${{ env.FINAL_DIR }}"
+        $pythonDir = Join-Path $finalDir "python"
         
+        Write-Host "Creating pythonCWMS.bat in: $pythonDir"
+        
+        # Verify the python directory exists
+        if (-not (Test-Path $pythonDir)) {
+          Write-Error "Python directory not found at: $pythonDir"
+          Write-Host "Contents of final directory:"
+          Get-ChildItem -Path $finalDir | ForEach-Object { Write-Host "  $($_.Name)" }
+          exit 1
+        }
+        
+        # Create the batch file content
+        $batContent = '@"%~dp0python.exe" %*'
+        $batPath = Join-Path $pythonDir "pythonCWMS.bat"
+        
+        # Write the batch file
+        $batContent | Out-File -FilePath $batPath -Encoding ASCII
+        
+        Write-Host "✓ Created pythonCWMS.bat at: $batPath"
+        Write-Host "✓ Batch file content: $batContent"
+        
+        # Verify it was created
+        if (Test-Path $batPath) {
+          Write-Host "✓ Batch file successfully created"
+          Write-Host "File contents:"
+          Get-Content $batPath | ForEach-Object { Write-Host "  $_" }
+        } else {
+          Write-Error "❌ Failed to create batch file"
+          exit 1
+        }       
     - name: Install 7-Zip
       run: |
         Write-Host "Installing 7-Zip..."
