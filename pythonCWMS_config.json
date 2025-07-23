@@ -1,13 +1,13 @@
 {
-  "python_download_url": "https://github.com/msweier/pythonCWMS/releases/download/v0.8.2/pythonCWMS0.8.2.7z",
-  "python_expected_hash_sha256": "DCCEA467D6D2CCD41AD206E88F03961BDD9E047FB5FED936EF81E5E297588A59",
+  "python_download_url": "https://github.com/msweier/pythonCWMS/releases/download/v0.8.0/pythonCWMS0.8.0.7z",
+  "python_expected_hash_sha256": "9557D7D7515D7213B38533C9469DAAF29DFCF6CA41A16544FE557A7810A58A72",
   "default_install_directory": "C:\\hec\\python",
   "default_env_var_name": "PYTHON_CWMS_HOME",
-  "python_exe_sub_directory": "pythonCWMS0.8.2\\python",
-  "version": "0.8.2",
-  "archive_filename": "pythonCWMS0.8.2.7z",
-  "archive_size_mb": 127.71,
-  "created_date": "2025-07-23T14:58:25Z",
+  "python_exe_sub_directory": "pythonCWMS0.8.0\\python",
+  "version": "0.8.0",
+  "archive_filename": "pythonCWMS0.8.0.7z",
+  "archive_size_mb": 130.87,
+  "created_date": "2025-07-23T16:17:45Z",
   "source_winpython_version": "16.6.20250620final",
   "source_winpython_filename": "Winpython64-3.12.10.1dot.zip"
 }
