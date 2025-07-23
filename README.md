@@ -14,29 +14,34 @@ A portable, Windows, Python environment bundled with CWMS libraries and dependen
 ### Download and Installation
 Open the CAVI and script editor.
 
-![alt text](image.png)
+![alt text](./screenshots/image.png)
 
 Make a new script in the CAVI called `install_python`.
 
-![alt text](image-2.png)
-![alt text](image-3.png)
+![alt text](./screenshots/image-2.png)
+![alt text](./screenshots/image-3.png)
 
-Go to the [install_python.py] (./install_python.py) script and copy the raw script.
-![alt text](image-1.png)
+Go to the [install_python.py] (./jython_scripts/install_python.py) script in the `jython_scripts` folder and copy the raw script.
+![alt text](./screenshots/image-1.png)
 
 Paste the script into the script window.
-![alt text](image-4.png)
+![alt text](./screenshots/image-4.png)
 
 Click `Save/Run` to launch the installer.
 
-![alt text](image-5.png)
+![alt text](./screenshots/image-5.png)
 
 Click `Install Portable Python` to install.
 
-### Usage
+### General Usage
+- Use `pythonCWMS` in the command line to run python.
+- Setup the default python in VsCode by pointing the []`python.defaultInterpreterPath`] (https://code.visualstudio.com/docs/python/settings-reference) to the installation directory (e.g. `C:\hec\python\pythonCWMS0.8.0\python`). 
 - Run `WinPython Command Prompt.exe` for command line access
 - Run `WinPython Interpreter.exe` for Python IDLE
 - Or use `pythonCWMS.bat` for the custom CWMS environment
+
+### CAVI Usage
+- To run a python script in the CAVI, edit the `exmple_python_script_launcher.py` jython script to point to your python script and save in the script editor. You can pass arguments from your jython environment (e.g. watershed path etc...).
 
 ## Python Build Development
 
