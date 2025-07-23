@@ -7,22 +7,38 @@ A portable, Windows, Python environment bundled with CWMS libraries and dependen
 - **WinPython 3.12.10.1**: Portable Python distribution
 - **Pre-installed Libraries**: All dependencies from `requirements_binary_only.txt`
 - **Custom Configuration**: CWMS-specific setup and utilities
+- **Jython installer script**: An installer that will download this python from the CWMS CAVI and setup user environment variables.
 
 ## Quick Start
 
-### Download
-Go to [Releases](../../releases) and download the latest `pythonCWMS*.7z` file.
+### Download and Installation
+Open the CAVI and script editor.
 
-### Installation
-1. Extract the `.7z` file to your desired location
-2. No installation required - it's completely portable!
+![alt text](image.png)
+
+Make a new script in the CAVI called `install_python`.
+
+![alt text](image-2.png)
+![alt text](image-3.png)
+
+Go to the [install_python.py] (./install_python.py) script and copy the raw script.
+![alt text](image-1.png)
+
+Paste the script into the script window.
+![alt text](image-4.png)
+
+Click `Save/Run` to launch the installer.
+
+![alt text](image-5.png)
+
+Click `Install Portable Python` to install.
 
 ### Usage
 - Run `WinPython Command Prompt.exe` for command line access
 - Run `WinPython Interpreter.exe` for Python IDLE
 - Or use `pythonCWMS.bat` for the custom CWMS environment
 
-## Development
+## Python Build Development
 
 ### Building Locally
 1. Clone this repository
