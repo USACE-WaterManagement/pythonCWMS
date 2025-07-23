@@ -41,7 +41,7 @@ Click `Install Portable Python` to install.
 - Or use `pythonCWMS.bat` for the custom CWMS environment
 
 ### CAVI Usage
-- To run a python script in the CAVI, edit the [`exmple_python_script_launcher.py`](./jython_scripts/exmple_python_script_launcher.py) jython script to point to your python script and save in the script editor. You can pass arguments from your jython environment (e.g. watershed path etc...).
+- To run a python script in the CAVI, edit the [`example_python_script_launcher.py`](./jython_scripts/example_python_script_launcher.py) jython script to point to your python script and save in the script editor. You can pass arguments from your jython environment (e.g. watershed path etc...).
 
 ## Python Build Development
 
