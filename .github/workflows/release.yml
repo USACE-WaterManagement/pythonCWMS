@@ -22,7 +22,7 @@ env:
   WINPYTHON_VERSION: "16.6.20250620final"
   WINPYTHON_FILENAME: "Winpython64-3.12.10.1dot.zip"
   WINPYTHON_DOWNLOAD_URL: "https://github.com/winpython/winpython/releases/download/16.6.20250620final/Winpython64-3.12.10.1dot.zip"
-  
+
 jobs:
   build:
     runs-on: windows-latest
@@ -228,13 +228,14 @@ jobs:
           $config = @{}
           Write-Host "⚠️ No existing config file, creating new one"
         }
+        $archiveNameWithoutExtension = $archiveName -replace '\.7z$', ''
         
         # Update all values
         $config.python_download_url = "https://github.com/$repoOwner/$repoName/releases/download/v$version/$archiveName"
         $config.python_expected_hash_sha256 = $hash
         $config.default_install_directory = "C:\hec\python"
         $config.default_env_var_name = "PYTHON_CWMS_HOME"
-        $config.python_exe_sub_directory = "$winpythonSubDir\python"
+        $config.python_exe_sub_directory = "$archiveNameWithoutExtension\python" 
         $config.version = $version
         $config.archive_filename = $archiveName
         $config.archive_size_mb = [math]::Round((Get-Item $archiveName).Length / 1MB, 2)
