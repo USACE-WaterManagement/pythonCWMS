@@ -1,0 +1,253 @@
+name: Build and Release Python CWMS
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number'
+        required: true
+        default: '0.8'
+
+env:
+  # WinPython Configuration - Update these variables as needed
+  WINPYTHON_VERSION: "16.6.20250620final"
+  WINPYTHON_FILENAME: "Winpython64-3.12.10.1dot.zip"
+  WINPYTHON_DOWNLOAD_URL: "https://github.com/winpython/winpython/releases/download/16.6.20250620final/Winpython64-3.12.10.1dot.zip"
+  
+  # Alternative: You can also construct the URL from parts
+  # WINPYTHON_BASE_URL: "https://github.com/winpython/winpython/releases/download"
+  # Full URL would be: ${{ env.WINPYTHON_BASE_URL }}/${{ env.WINPYTHON_VERSION }}/${{ env.WINPYTHON_FILENAME }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Download WinPython
+      run: |
+        $url = "${{ env.WINPYTHON_DOWNLOAD_URL }}"
+        $filename = "${{ env.WINPYTHON_FILENAME }}"
+        
+        Write-Host "Downloading WinPython from: $url"
+        Write-Host "Saving as: $filename"
+        
+        Invoke-WebRequest -Uri $url -OutFile $filename
+        
+        # Verify the file was downloaded
+        if (Test-Path $filename) {
+          $size = (Get-Item $filename).Length / 1MB
+          Write-Host "✓ Downloaded successfully - Size: $([math]::Round($size, 2)) MB"
+        } else {
+          Write-Error "❌ Failed to download $filename"
+          exit 1
+        }
+        
+    - name: Extract WinPython
+      run: |
+        $filename = "${{ env.WINPYTHON_FILENAME }}"
+        Write-Host "Extracting $filename..."
+        
+        Expand-Archive -Path $filename -DestinationPath "winpython_extracted"
+        
+        # List what was extracted
+        $extractedDirs = Get-ChildItem -Path "winpython_extracted" -Directory
+        Write-Host "Extracted directories:"
+        $extractedDirs | ForEach-Object { Write-Host "  - $($_.Name)" }
+        
+    - name: Install packages from requirements
+      run: |
+        $winpythonDir = Get-ChildItem -Path "winpython_extracted" -Directory | Select-Object -First 1
+        Write-Host "Using WinPython directory: $($winpythonDir.Name)"
+        
+        $pipPath = Join-Path $winpythonDir.FullName "python-*\Scripts\pip.exe"
+        $pipExe = Get-ChildItem -Path $pipPath | Select-Object -First 1
+        
+        if (Test-Path "requirements_binary_only.txt") {
+          Write-Host "Installing packages from requirements_binary_only.txt..."
+          & $pipExe.FullName install -r requirements_binary_only.txt --only-binary=all
+        } else {
+          Write-Host "No requirements_binary_only.txt found, skipping package installation"
+        }
+        
+    - name: Run setup script (if exists)
+      run: |
+        $winpythonDir = Get-ChildItem -Path "winpython_extracted" -Directory | Select-Object -First 1
+        $pythonPath = Join-Path $winpythonDir.FullName "python-*\python.exe"
+        $pythonExe = Get-ChildItem -Path $pythonPath | Select-Object -First 1
+        
+        if (Test-Path "setup_environment.py") {
+          Write-Host "Running setup_environment.py..."
+          & $pythonExe.FullName setup_environment.py
+        } else {
+          Write-Host "No setup_environment.py found, skipping custom setup"
+        }
+        
+    - name: Create final directory structure
+      run: |
+        $winpythonDir = Get-ChildItem -Path "winpython_extracted" -Directory | Select-Object -First 1
+        $version = if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") { 
+          "${{ github.event.inputs.version }}" 
+        } else { 
+          "${{ github.ref_name }}" -replace "^v", ""
+        }
+        $finalDir = "pythonCWMS$version"
+        
+        Write-Host "Creating final directory: $finalDir"
+        Write-Host "Source WinPython directory: $($winpythonDir.Name)"
+        
+        New-Item -ItemType Directory -Path $finalDir -Force
+        Copy-Item -Path "$($winpythonDir.FullName)\*" -Destination $finalDir -Recurse -Force
+        
+        # Copy any additional files from repo (excluding git files)
+        Write-Host "Copying additional repository files..."
+        Get-ChildItem -Path "." -Exclude ".git*", "winpython_extracted", "*.zip", $finalDir | 
+          ForEach-Object { 
+            Write-Host "  Copying: $($_.Name)"
+            Copy-Item -Path $_.FullName -Destination $finalDir -Recurse -Force 
+          }
+        
+        echo "FINAL_DIR=$finalDir" >> $env:GITHUB_ENV
+        echo "VERSION=$version" >> $env:GITHUB_ENV
+        
+        # Store the WinPython subdirectory name for the config
+        $winpythonSubDir = $winpythonDir.Name
+        echo "WINPYTHON_SUBDIR=$winpythonSubDir" >> $env:GITHUB_ENV
+        Write-Host "WinPython subdirectory: $winpythonSubDir"
+        
+    - name: Install 7-Zip
+      run: |
+        Write-Host "Installing 7-Zip..."
+        choco install 7zip -y
+        
+    - name: Create 7z archive
+      run: |
+        $archiveName = "pythonCWMS${{ env.VERSION }}.7z"
+        Write-Host "Creating archive: $archiveName"
+        Write-Host "Compressing directory: ${{ env.FINAL_DIR }}"
+        
+        & "C:\Program Files\7-Zip\7z.exe" a -t7z -mx=9 $archiveName "${{ env.FINAL_DIR }}"
+        
+        if (Test-Path $archiveName) {
+          $size = (Get-Item $archiveName).Length / 1MB
+          Write-Host "✓ Archive created successfully - Size: $([math]::Round($size, 2)) MB"
+          echo "ARCHIVE_SIZE_MB=$([math]::Round($size, 2))" >> $env:GITHUB_ENV
+        } else {
+          Write-Error "❌ Failed to create archive"
+          exit 1
+        }
+        
+        echo "ARCHIVE_NAME=$archiveName" >> $env:GITHUB_ENV
+
+    - name: Calculate SHA256 hash
+      run: |
+        Write-Host "Calculating SHA256 hash for ${{ env.ARCHIVE_NAME }}..."
+        $hash = Get-FileHash -Path "${{ env.ARCHIVE_NAME }}" -Algorithm SHA256
+        $hashString = $hash.Hash
+        echo "ARCHIVE_HASH=$hashString" >> $env:GITHUB_ENV
+        Write-Host "✓ SHA256: $hashString"
+
+    - name: Generate config JSON
+      run: |
+        $repoOwner = "${{ github.repository_owner }}"
+        $repoName = "${{ github.event.repository.name }}"
+        $version = "${{ env.VERSION }}"
+        $archiveName = "${{ env.ARCHIVE_NAME }}"
+        $hash = "${{ env.ARCHIVE_HASH }}"
+        $winpythonSubDir = "${{ env.WINPYTHON_SUBDIR }}"
+        $winpythonVersion = "${{ env.WINPYTHON_VERSION }}"
+        $winpythonFilename = "${{ env.WINPYTHON_FILENAME }}"
+        
+        Write-Host "Generating configuration file..."
+        
+        # Construct the download URL
+        $downloadUrl = "https://github.com/$repoOwner/$repoName/releases/download/v$version/$archiveName"
+        
+        # Find the python subdirectory (should be something like python-3.12.10.amd64)
+        $pythonSubDir = Get-ChildItem -Path "${{ env.FINAL_DIR }}" -Directory -Name "python-*" | Select-Object -First 1
+        $pythonExeSubDir = "$winpythonSubDir\$pythonSubDir"
+        
+        Write-Host "Python executable subdirectory: $pythonExeSubDir"
+        
+        # Create the config object
+        $config = @{
+            python_download_url = $downloadUrl
+            python_expected_hash_sha256 = $hash
+            default_install_directory = "C:\hec\python"
+            default_env_var_name = "PYTHON_CWMS_HOME" 
+            python_exe_sub_directory = $pythonExeSubDir
+            version = $version
+            archive_filename = $archiveName
+            archive_size_mb = [math]::Round((Get-Item "${{ env.ARCHIVE_NAME }}").Length / 1MB, 2)
+            created_date = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+            source_winpython_version = $winpythonVersion
+            source_winpython_filename = $winpythonFilename
+        }
+        
+        # Convert to JSON and save
+        $configJson = $config | ConvertTo-Json -Depth 10
+        $configJson | Out-File -FilePath "pythonCWMS_config.json" -Encoding UTF8
+        
+        Write-Host "✓ Generated config file:"
+        Get-Content "pythonCWMS_config.json"
+
+    - name: Validate config file
+      run: |
+        Write-Host "Validating configuration file..."
+        # Test that the JSON is valid
+        try {
+          $config = Get-Content "pythonCWMS_config.json" | ConvertFrom-Json
+          Write-Host "✓ Config JSON is valid"
+          Write-Host "✓ Download URL: $($config.python_download_url)"
+          Write-Host "✓ Hash: $($config.python_expected_hash_sha256)"
+          Write-Host "✓ Python exe path: $($config.python_exe_sub_directory)"
+          Write-Host "✓ Source WinPython: $($config.source_winpython_filename)"
+        }
+        catch {
+          Write-Error "❌ Config JSON is invalid: $_"
+          exit 1
+        }
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.ref_name || format('v{0}', github.event.inputs.version) }}
+        name: Python CWMS ${{ env.VERSION }}
+        draft: false
+        prerelease: false
+        files: |
+          ${{ env.ARCHIVE_NAME }}
+          pythonCWMS_config.json
+        body: |
+          ## Python CWMS ${{ env.VERSION }}
+          
+          Portable Python environment with CWMS libraries and dependencies.
+          
+          ### Downloads:
+          - **`${{ env.ARCHIVE_NAME }}`** - Main Python environment archive (${{ env.ARCHIVE_SIZE_MB }} MB)
+          - **`pythonCWMS_config.json`** - Configuration file for automated installers
+          
+          ### Archive Details:
+          - **Size:** ${{ env.ARCHIVE_SIZE_MB }} MB
+          - **SHA256:** `${{ env.ARCHIVE_HASH }}`
+          - **Source:** ${{ env.WINPYTHON_FILENAME }}
+          
+          ### Contents:
+          - WinPython 3.12.10.1 (from ${{ env.WINPYTHON_VERSION }})
+          - Libraries from requirements_binary_only.txt
+          - Custom setup and configuration
+          
+          ### Usage:
+          1. Extract the .7z file to your desired location
+          2. Run `${{ env.FINAL_DIR }}\WinPython Command Prompt.exe`
+          3. Your environment is ready to use!
+          
+          ### For Automated Installation:
+          Use the `pythonCWMS_config.json` file with your installer scripts.
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
