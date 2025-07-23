@@ -65,12 +65,51 @@ jobs:
         $winpythonDir = Get-ChildItem -Path "winpython_extracted" -Directory | Select-Object -First 1
         Write-Host "Using WinPython directory: $($winpythonDir.Name)"
         
-        $pipPath = Join-Path $winpythonDir.FullName "python-*\Scripts\pip.exe"
-        $pipExe = Get-ChildItem -Path $pipPath | Select-Object -First 1
+        # The python directory is simply named "python" (not python-*)
+        $pythonDirPath = Join-Path $winpythonDir.FullName "python"
+        $pipPath = Join-Path $pythonDirPath "Scripts\pip.exe"
+        $pythonPath = Join-Path $pythonDirPath "python.exe"
+        
+        Write-Host "Python directory path: $pythonDirPath"
+        Write-Host "Looking for pip at: $pipPath"
+        Write-Host "Looking for python at: $pythonPath"
+        
+        # Verify directories and files exist
+        if (-not (Test-Path $pythonDirPath)) {
+          Write-Error "Python directory not found at: $pythonDirPath"
+          Write-Host "Available directories in WinPython:"
+          Get-ChildItem -Path $winpythonDir.FullName -Directory | ForEach-Object { Write-Host "  $($_.Name)" }
+          exit 1
+        }
+        
+        if (-not (Test-Path $pythonPath)) {
+          Write-Error "Python executable not found at: $pythonPath"
+          exit 1
+        }
+        
+        if (-not (Test-Path $pipPath)) {
+          Write-Error "Pip not found at: $pipPath"
+          Write-Host "Contents of Scripts directory:"
+          $scriptsDir = Join-Path $pythonDirPath "Scripts"
+          if (Test-Path $scriptsDir) {
+            Get-ChildItem -Path $scriptsDir | ForEach-Object { Write-Host "  $($_.Name)" }
+          }
+          exit 1
+        }
         
         if (Test-Path "requirements_binary_only.txt") {
           Write-Host "Installing packages from requirements_binary_only.txt..."
-          & $pipExe.FullName install -r requirements_binary_only.txt --only-binary=all
+          Write-Host "Using python: $pythonPath"
+          
+          # Use python -m pip for more reliability
+          & $pythonPath -m pip install -r requirements_binary_only.txt --only-binary=all
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Package installation failed with exit code: $LASTEXITCODE"
+            exit 1
+          }
+          
+          Write-Host "✓ Package installation completed successfully"
         } else {
           Write-Host "No requirements_binary_only.txt found, skipping package installation"
         }
@@ -78,12 +117,28 @@ jobs:
     - name: Run setup script (if exists)
       run: |
         $winpythonDir = Get-ChildItem -Path "winpython_extracted" -Directory | Select-Object -First 1
-        $pythonPath = Join-Path $winpythonDir.FullName "python-*\python.exe"
-        $pythonExe = Get-ChildItem -Path $pythonPath | Select-Object -First 1
+        
+        # The python directory is simply named "python"
+        $pythonDirPath = Join-Path $winpythonDir.FullName "python"
+        $pythonPath = Join-Path $pythonDirPath "python.exe"
+        
+        if (-not (Test-Path $pythonPath)) {
+          Write-Error "Python executable not found at: $pythonPath"
+          exit 1
+        }
         
         if (Test-Path "setup_environment.py") {
           Write-Host "Running setup_environment.py..."
-          & $pythonExe.FullName setup_environment.py
+          Write-Host "Using python: $pythonPath"
+          
+          & $pythonPath setup_environment.py
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Setup script failed with exit code: $LASTEXITCODE"
+            exit 1
+          }
+          
+          Write-Host "✓ Setup script completed successfully"
         } else {
           Write-Host "No setup_environment.py found, skipping custom setup"
         }
@@ -168,9 +223,8 @@ jobs:
         # Construct the download URL
         $downloadUrl = "https://github.com/$repoOwner/$repoName/releases/download/v$version/$archiveName"
         
-        # Find the python subdirectory (should be something like python-3.12.10.amd64)
-        $pythonSubDir = Get-ChildItem -Path "${{ env.FINAL_DIR }}" -Directory -Name "python-*" | Select-Object -First 1
-        $pythonExeSubDir = "$winpythonSubDir\$pythonSubDir"
+        # The python subdirectory is simply "python"
+        $pythonExeSubDir = "$winpythonSubDir\python"
         
         Write-Host "Python executable subdirectory: $pythonExeSubDir"
         
