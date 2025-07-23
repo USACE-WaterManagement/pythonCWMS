@@ -28,8 +28,7 @@ class InstallerGUI(JFrame):
 
         # --- Default hardcoded URL for the configuration file ---
         # This is the starting point for the Config URL input field.
-        self.default_config_url = "https://raw.githubusercontent.com/msweier/pythonCWMS/refs/heads/main/pythonCWMS_config.json" # <--- IMPORTANT: CHANGE THIS URL!
-        # --------------------------------------------------------
+        self.default_config_url = "https://raw.githubusercontent.com/USACE-WaterManagement/pythonCWMS/refs/heads/main/pythonCWMS_config.json"
 
         # Initialize these as None; they will be populated from the config file
         self.python_7z_url = None

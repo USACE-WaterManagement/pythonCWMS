@@ -1,5 +1,5 @@
 {
-  "python_download_url": "https://github.com/msweier/pythonCWMS/releases/download/v0.8.0/pythonCWMS0.8.0.7z",
+  "python_download_url": "https://github.com/USACE-WaterManagement/pythonCWMS/releases/download/v0.8.0/pythonCWMS0.8.0.7z",
   "python_expected_hash_sha256": "9557D7D7515D7213B38533C9469DAAF29DFCF6CA41A16544FE557A7810A58A72",
   "default_install_directory": "C:\\hec\\python",
   "default_env_var_name": "PYTHON_CWMS_HOME",
