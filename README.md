@@ -20,7 +20,7 @@ Go to [Releases](../../releases) and download the latest `pythonCWMS*.7z` file.
 ### Usage
 - Run `WinPython Command Prompt.exe` for command line access
 - Run `WinPython Interpreter.exe` for Python IDLE
-- Or use `start_cwms.bat` for the custom CWMS environment
+- Or use `pythonCWMS.bat` for the custom CWMS environment
 
 ## Development
 
