@@ -53,7 +53,7 @@ Click `Install Portable Python` to install. Please be patient, it may take up to
 
 ### Build Locally
 1. Clone this repository
-2. Optionally, modify WinPython varibles (`WINPYTHON_VERSION`, `WINPYTHON_FILENAME`, and `WINPYTHON_DOWNLOAD_URL`) in the [release.yml](.github\workflows\release.yml) if upgrading python.
+2. Optionally, modify WinPython variables (`WINPYTHON_VERSION`, `WINPYTHON_FILENAME`, and `WINPYTHON_DOWNLOAD_URL`) in the [release.yml](.github\workflows\release.yml) if upgrading python.
 3. Modify `requirements_binary_only.txt` with your dependencies
 4. Push a tag to trigger the build: `git tag v0.8` and `git push origin v0.8`
 
