@@ -43,15 +43,19 @@ Click `Install Portable Python` to install. Please be patient, it may take up to
 #### Install additional libraries
 - To install additional libraries beyond what is in the [requirements_binary_only.txt](./requirements_binary_only.txt) file, open the WinPython powershell included in your python (e.g. `C:\hec\python\pythonCWMS0.8.0\WinPython Powershell Prompt.exe`) and do a pip install from there.
 
-### CAVI Usage
-- To run a python script in the CAVI, edit the [`example_python_script_launcher.py`](./jython_scripts/example_python_script_launcher.py) jython script to point to your python script and save in the script editor. You can pass arguments from your jython environment (e.g. watershed path etc...).
+### CAVI Python Script Usage
+ To use the python environment in the CAVI, a jython launcher script is used to run the python script as a subprocess. The jython script can also pass arguments to the python script.
 
-## Python Build Development
+- To run a python script in the CAVI, edit the `python_script_path` and `args` variables in the [`example_python_script_launcher.py`](./jython_scripts/example_python_script_launcher.py) jython script to point to your python script and save in the CAVI script editor. You can pass arguments from your jython environment (e.g. watershed path etc...), but this is optional. Leave `args` as `None` or `''` if arguments are not needed.
+- Output of the python script will be passed to the CAVI console after the process is completed. 
 
-### Building Locally
+## To Update Python Build
+
+### Build Locally
 1. Clone this repository
-2. Create/modify `requirements_binary_only.txt` with your dependencies
-3. Push a tag to trigger the build: `git tag v0.8 && git push origin v0.8`
+2. Optionally, modify WinPython varibles (`WINPYTHON_VERSION`, `WINPYTHON_FILENAME`, and `WINPYTHON_DOWNLOAD_URL`) in the [release.yml](.github\workflows\release.yml) if upgrading python.
+3. Modify `requirements_binary_only.txt` with your dependencies
+4. Push a tag to trigger the build: `git tag v0.8` and `git push origin v0.8`
 
 ### Manual Build
 You can also trigger a build manually from the Actions tab.
