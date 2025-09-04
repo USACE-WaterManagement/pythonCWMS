@@ -319,7 +319,7 @@ class InstallerGUI(JFrame):
         
         paths_to_add_str = [
             "%{}%".format(env_var_name),
-            "%{}\\Scripts%".format(env_var_name)
+            "%{}%\\Scripts".format(env_var_name)
         ]
         
         expanded_paths_to_add = [os.path.normpath(os.path.expandvars(p)) for p in paths_to_add_str]
