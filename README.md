@@ -33,6 +33,8 @@ Click `Save/Run` to launch the installer.
 
 Click `Install Portable Python` to install. Please be patient, it may take up to 10 minutes to install.
 
+Note: if you get a "Failed to download configuration" error, try replacing the _Config URL:_ path with a link to the config.json file in the latest release (e.g. https://github.com/USACE-WaterManagement/pythonCWMS/releases/download/v0.81/pythonCWMS_config.json) and reload the configuration. 
+
 ### General Usage
 - Use `pythonCWMS` in the command line to run python.
 - Setup the default python in VsCode by pointing the []`python.defaultInterpreterPath`] (https://code.visualstudio.com/docs/python/settings-reference) to the installation directory (e.g. `C:\hec\python\pythonCWMS0.8.0\python`). 
