@@ -37,7 +37,7 @@ Click `Install Portable Python` to install. Please be patient, it may take up to
 
 Note: if you get a "Failed to download configuration" error with the jython installer, try replacing the `Config URL:` path with a link to the ` pythonCWMS_config.json` file in the latest release (e.g. [./releases/tag/v0.81/pythonCWMS_config.json](https://github.com/USACE-WaterManagement/pythonCWMS/releases/tag/v0.81)) and reload the configuration. This error can occur if the rawgithub content is blocked.
 
-You can also just download the [latest release]((https://github.com/USACE-WaterManagement/pythonCWMS/releases/) and unzip the portable python distribution and setup your user environment variables yourself to add the python to your path.
+You can also just download the latest release file (e.g. `pythonCWMS0.81.7z` (https://github.com/USACE-WaterManagement/pythonCWMS/releases/)) and unzip the portable python distribution and setup your user environment variables yourself to add the python to your path.
 
 ### General Usage
 - Use `pythonCWMS` in the command line to run python.
