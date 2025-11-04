@@ -45,6 +45,12 @@ You can also just download the latest release file (e.g. `pythonCWMS0.81.7z` (ht
 - Run `WinPython Command Prompt.exe` for command line access
 - Run `WinPython Interpreter.exe` for Python IDLE
 - Or use `pythonCWMS.bat` for the custom CWMS environment
+
+#### VS Code Use
+To have VS Code default to this portable python, open `Preferences: Open User Settings (JSON)` by pressing `Cntr+Shift+P` and searching for Preferences in the search bar at the top of VS Code.
+![alt text](./screenshots/vsCodeUserSettings.png)
+
+In your `settings.json` file, put this line in `"python.defaultInterpreterPath": "${env:PYTHON_CWMS_HOME}\\python.exe"`.
   
 #### Install additional libraries
 - To install additional libraries beyond what is in the [requirements_binary_only.txt](./requirements_binary_only.txt) file, open the WinPython powershell included in your python (e.g. `C:\hec\python\pythonCWMS0.8.0\WinPython Powershell Prompt.exe`) and do a pip install from there.
