@@ -43,3 +43,5 @@ hyswap
 hecdss
 metar
 git+https://github.com/HydrologicEngineeringCenter/cwms-cli.git@main
+asyncio
+aiohttp
