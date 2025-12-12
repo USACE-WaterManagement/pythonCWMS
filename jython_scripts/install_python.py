@@ -371,7 +371,8 @@ class InstallerGUI(JFrame):
                 self._update_ui(lambda: self.log_area.append("Cleaned up: {}\n".format(path)))
             except Exception, e:
                 self._update_ui(lambda: self.log_area.append("Warning: Failed to clean up directory {}: {}\n".format(path, e)))
-                self._update_ui(lambda: JOptionPane.showMessageDialog(self, "Warning: Could not fully clean up directory {}. Please remove it manually if needed.\nError: {}".format(path, e), "Cleanup Warning", JOptionPane.WARNING_MESSAGE))
+                self._update_ui(lambda: JOptionPane.showMessageDialog(self, "Warning: Could not fully clean up directory {}. Please close any open python instances and " \
+                "try again or remove it manually if needed.\nError: {}".format(path, e), "Cleanup Warning", JOptionPane.WARNING_MESSAGE))
 
 
     def _run_installation_in_thread(self, current_python_7z_url, current_expected_sha256_hash, current_destination_dir, current_env_var_name, current_python_exe_sub_dir, seven_z_exe_path):
