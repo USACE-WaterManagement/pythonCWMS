@@ -37,11 +37,11 @@ Click `Install Portable Python` to install. Please be patient, it may take up to
 
 Note: if you get a "Failed to download configuration" error with the jython installer, try replacing the `Config URL:` path with a link to the ` pythonCWMS_config.json` file in the latest release (e.g. [./releases/tag/v0.81/pythonCWMS_config.json](https://github.com/USACE-WaterManagement/pythonCWMS/releases/tag/v0.81)) and reload the configuration. This error can occur if the rawgithub content is blocked.
 
-You can also just download the latest release file (e.g. `pythonCWMS0.81.7z` (https://github.com/USACE-WaterManagement/pythonCWMS/releases/)) and unzip the portable python distribution and setup your user environment variables yourself to add the python to your path.
+You can also just download the latest release file (e.g. `pythonCWMS1.01.7z` (https://github.com/USACE-WaterManagement/pythonCWMS/releases/)) and unzip the portable python distribution and setup your user environment variables yourself to add the python to your path.
 
 ### General Usage
 - Use `pythonCWMS` in the command line to run python.
-- Setup the default python in VsCode by pointing the []`python.defaultInterpreterPath`] (https://code.visualstudio.com/docs/python/settings-reference) to the installation directory (e.g. `C:\hec\python\pythonCWMS0.8.0\python`). 
+- Setup the default python in VsCode by pointing the []`python.defaultInterpreterPath`] (https://code.visualstudio.com/docs/python/settings-reference) to the installation directory (e.g. `C:\hec\python\pythonCWMS\python`). 
 - Run `WinPython Command Prompt.exe` for command line access
 - Run `WinPython Interpreter.exe` for Python IDLE
 - Or use `pythonCWMS.bat` for the custom CWMS environment
@@ -50,13 +50,15 @@ You can also just download the latest release file (e.g. `pythonCWMS0.81.7z` (ht
 To have VS Code default to this portable python, open `Preferences: Open User Settings (JSON)` by pressing `Cntr+Shift+P` and searching for Preferences in the search bar at the top of VS Code.
 ![alt text](./screenshots/vsCodeUserSettings.png)
 
-In your `settings.json` file, put this line in `"python.defaultInterpreterPath": "${env:PYTHON_CWMS_HOME}\\python.exe"`.
+In your `settings.json` file, put in this  `"python.defaultInterpreterPath": "${env:PYTHON_CWMS_HOME}\\python.exe"` or this  `"python.defaultInterpreterPath": "C:\\hec\\python\\pythonCWMS\\python\\python.exe"`.
 
 When working with a repo VSCode sometimes has trouble finding the interprator (e.g. python notebook w/ shared workspace). Try searching for `Python: Clear Workspace Interpreter Setting` by pressing `Cntr+Shift+P` and searching for Preferences in the search bar at the top of VS Code.
 ![alt text](./screenshots/clearWorkspaceSetting.png)
 
 #### Install additional libraries
-- To install additional libraries beyond what is in the [requirements_binary_only.txt](./requirements_binary_only.txt) file, open the WinPython powershell included in your python (e.g. `C:\hec\python\pythonCWMS0.8.0\WinPython Powershell Prompt.exe`) and do a pip install from there.
+- To install additional libraries beyond what is in the [requirements_binary_only.txt](./requirements_binary_only.txt) file, open the WinPython powershell included in your python (e.g. `C:\hec\python\pythonCWMS\WinPython Powershell Prompt.exe`) and do a pip install from there.
+
+- The command `pythonCWMS -m pip install my_package_to_install` will also work
 
 ### CAVI Python Script Usage
  To use the python environment in the CAVI, a jython launcher script is used to run the python script as a subprocess. The jython script can also pass arguments to the python script.
