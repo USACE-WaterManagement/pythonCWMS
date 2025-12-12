@@ -51,7 +51,10 @@ To have VS Code default to this portable python, open `Preferences: Open User Se
 ![alt text](./screenshots/vsCodeUserSettings.png)
 
 In your `settings.json` file, put this line in `"python.defaultInterpreterPath": "${env:PYTHON_CWMS_HOME}\\python.exe"`.
-  
+
+When working with a repo VSCode sometimes has trouble finding the interprator (e.g. python notebook w/ shared workspace). Try searching for `Python: Clear Workspace Interpreter Setting` by pressing `Cntr+Shift+P` and searching for Preferences in the search bar at the top of VS Code.
+![alt text](./screenshots/clearWorkspaceSetting.png)
+
 #### Install additional libraries
 - To install additional libraries beyond what is in the [requirements_binary_only.txt](./requirements_binary_only.txt) file, open the WinPython powershell included in your python (e.g. `C:\hec\python\pythonCWMS0.8.0\WinPython Powershell Prompt.exe`) and do a pip install from there.
 
