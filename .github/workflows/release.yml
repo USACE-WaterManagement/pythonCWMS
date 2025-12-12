@@ -153,7 +153,7 @@ jobs:
         } else { 
           "${{ github.ref_name }}" -replace "^v", ""
         }
-        $finalDir = "pythonCWMS$version"
+        $finalDir = "pythonCWMS"
         
         Write-Host "Creating final directory: $finalDir"
         Write-Host "Source WinPython directory: $($winpythonDir.Name)"
