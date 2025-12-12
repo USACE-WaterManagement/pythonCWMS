@@ -269,7 +269,7 @@ jobs:
         $config.python_expected_hash_sha256 = $hash
         $config.default_install_directory = "C:\hec\python"
         $config.default_env_var_name = "PYTHON_CWMS_HOME"
-        $config.python_exe_sub_directory = "cwmsPYTHON\python" 
+        $config.python_exe_sub_directory = "pythonCWMS\python" 
         $config.version = $version
         $config.archive_filename = $archiveName
         $config.archive_size_mb = [math]::Round((Get-Item $archiveName).Length / 1MB, 2)
