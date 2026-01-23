@@ -66,6 +66,6 @@ When working with a repo VSCode sometimes has trouble finding the interprator (e
 - To run a python script in the CAVI, edit the `python_script_path` and `args` variables in the [`example_python_script_launcher.py`](./jython_scripts/example_python_script_launcher.py) jython script to point to your python script and save in the CAVI script editor. You can pass arguments from your jython environment (e.g. watershed path etc...), but this is optional. Leave `args` as `None` or `''` if arguments are not needed.
 - Output of the python script will be passed to the CAVI console after the process is completed. 
 
-## To help maintain the python builds
+## To help maintain the python builds 
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md)
