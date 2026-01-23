@@ -1,13 +1,13 @@
 {
-  "python_download_url": "https://github.com/USACE-WaterManagement/pythonCWMS/releases/download/v1.0.1/pythonCWMS1.0.1.7z",
-  "python_expected_hash_sha256": "C064EC8B316FA983FC77E4F70515EEBA2DCFCBF35C125ABA77BAAA497D768138",
+  "python_download_url": "https://github.com/USACE-WaterManagement/pythonCWMS/releases/download/v1.0.2/pythonCWMS1.0.2.7z",
+  "python_expected_hash_sha256": "FE12F22014E5EE11887DB4051AC050F6A5C43138616FFF3989012CDFB708AC9E",
   "default_install_directory": "C:\\hec\\python",
   "default_env_var_name": "PYTHON_CWMS_HOME",
   "python_exe_sub_directory": "pythonCWMS\\python",
-  "version": "1.0.1",
-  "archive_filename": "pythonCWMS1.0.1.7z",
-  "archive_size_mb": 126.38,
-  "created_date": "2026-01-09T16:42:02Z",
+  "version": "1.0.2",
+  "archive_filename": "pythonCWMS1.0.2.7z",
+  "archive_size_mb": 126.23,
+  "created_date": "2026-01-23T15:20:02Z",
   "source_winpython_version": "16.6.20250620final",
   "source_winpython_filename": "Winpython64-3.12.10.1dot.zip"
 }
