@@ -42,6 +42,6 @@ dataretrieval
 hyswap
 hecdss
 metar
-git+https://github.com/HydrologicEngineeringCenter/cwms-cli.git@main
+cwms-cli
 asyncio
 aiohttp
