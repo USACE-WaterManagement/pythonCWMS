@@ -4,8 +4,8 @@ A portable, Windows, Python environment bundled with CWMS libraries and dependen
 
 ## What's Included
 
-- **WinPython 3.12.10.1**: Portable Python distribution
-- **Pre-installed Libraries**: All dependencies from `requirements_binary_only.txt`
+- **WinPython 3.13.11.0**: Portable Python distribution
+- **Pre-installed Libraries**: All dependencies from requirements files
 - **Custom Configuration**: CWMS-specific setup and utilities
 - **Jython installer script**: An installer that will download this python from the CWMS CAVI and setup user environment variables.
 
@@ -35,7 +35,7 @@ Click `Install Portable Python` to install. Please be patient, it may take up to
 
 #### Failed to download configuration error
 
-Note: if you get a "Failed to download configuration" error with the jython installer, try replacing the `Config URL:` path with a link to the ` pythonCWMS_config.json` file in the latest release (e.g. [./releases/tag/v0.81/pythonCWMS_config.json](https://github.com/USACE-WaterManagement/pythonCWMS/releases/tag/v0.81)) and reload the configuration. This error can occur if the rawgithub content is blocked.
+Note: if you get a "Failed to download configuration" error with the jython installer, try replacing the `Config URL:` path with a link to the ` pythonCWMS_config.json` file in the latest release (e.g. [./releases/tag/v0.81/pythonCWMS_config.json](https://github.com/USACE-WaterManagement/pythonCWMS/releases/)) and reload the configuration. This error can occur if the rawgithub content is blocked.
 
 You can also just download the latest release file (e.g. `pythonCWMS1.01.7z` (https://github.com/USACE-WaterManagement/pythonCWMS/releases/)) and unzip the portable python distribution and setup your user environment variables yourself to add the python to your path.
 

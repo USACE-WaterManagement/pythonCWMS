@@ -1,0 +1,11 @@
+--prefer-binary
+aiohttp
+asyncio
+hyswap
+importlib_resources
+jupyterlab
+metar
+pip-system-certs
+python-dotenv
+zipp
+JPype1
