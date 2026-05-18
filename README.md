@@ -7,27 +7,29 @@ A portable, Windows, Python environment bundled with CWMS libraries and dependen
 - **WinPython 3.13.11.0**: Portable Python distribution
 - **Pre-installed Libraries**: All dependencies from requirements files
 - **Custom Configuration**: CWMS-specific setup and utilities
-- **Jython installer script**: An installer that will download this python from the CWMS CAVI and setup user environment variables.
+- **Jython installer script**: An installer that will download this python from the CWMS-RTS and setup user environment variables.
 
 ## Quick Start
 
 ### Download and Installation
-Open the CAVI and script editor.
+Open the script editor in RTS or in HEC-DSS.
 
-![alt text](./screenshots/image.png)
+![alt text](<screenshots/Screenshot 2026-05-18 060758.png>)
 
-Make a new script in the CAVI called `install_python`.
+Make a new script in RTS or HEC-DSS called `install_python`.
 
-![alt text](./screenshots/image-2.png)
-![alt text](./screenshots/image-3.png)
+![alt text](<screenshots/Screenshot 2026-05-18 061255.png>)
+![alt text](screenshots/image-3.png)
+
 
 Go to the [install_python.py](./jython_scripts/install_python.py) script in the `jython_scripts` folder and copy the raw script.
 ![alt text](./screenshots/image-1.png)
 
 Paste the script into the script window.
-![alt text](./screenshots/image-4.png)
 
-Click `Save/Run` to launch the installer.
+![alt text](<screenshots/Screenshot 2026-05-18 061427.png>)
+
+Click `Save and Test` to launch the installer.
 
 ![alt text](./screenshots/image-5.png)
 
@@ -60,11 +62,11 @@ When working with a repo VSCode sometimes has trouble finding the interprator (e
 
 - The command `pythonCWMS -m pip install my_package_to_install` will also work
 
-### CAVI Python Script Usage
- To use the python environment in the CAVI, a jython launcher script is used to run the python script as a subprocess. The jython script can also pass arguments to the python script.
+### RTS Python Script Usage
+ To use the python environment in the RTS, a jython launcher script is used to run the python script as a subprocess. The jython script can also pass arguments to the python script.
 
-- To run a python script in the CAVI, edit the `python_script_path` and `args` variables in the [`example_python_script_launcher.py`](./jython_scripts/example_python_script_launcher.py) jython script to point to your python script and save in the CAVI script editor. You can pass arguments from your jython environment (e.g. watershed path etc...), but this is optional. Leave `args` as `None` or `''` if arguments are not needed.
-- Output of the python script will be passed to the CAVI console after the process is completed. 
+- To run a python script in the RTS, edit the `python_script_path` and `args` variables in the [`example_python_script_launcher.py`](./jython_scripts/example_python_script_launcher.py) jython script to point to your python script and save in the RTS script editor. You can pass arguments from your jython environment (e.g. watershed path etc...), but this is optional. Leave `args` as `None` or `''` if arguments are not needed.
+- Output of the python script will be passed to the RTS console after the process is completed. 
 
 ## To help maintain the python builds 
 
