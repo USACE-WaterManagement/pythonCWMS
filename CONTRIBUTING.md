@@ -54,6 +54,16 @@ uv pip compile --python-platform windows --python-version 3.13 ^
 The build fails if `requirements/locked.txt` is missing or if a locked artifact hash
 does not match.
 
+The `Sync shared requirements` workflow checks
+`USACE/cwbi-wm-images/job_runners/python_java/requirements.txt` on the `cwbi-dev`
+branch once per day and can also be run manually. When the source changes, it updates
+`requirements/base_requirements.txt`, regenerates `requirements/locked.txt`, and opens
+or updates a pull request for review. Configure the `CWBI_WM_IMAGES_TOKEN` Actions
+secret with a fine-grained token that has read-only Contents access to the private
+`USACE/cwbi-wm-images` repository. The repository Actions settings must also allow
+GitHub Actions to create pull requests. Users of this repository install from the
+checked-in snapshot and do not need access to the private source repository.
+
 ### Manual Build
 You can also trigger a build manually from the Actions tab.
 

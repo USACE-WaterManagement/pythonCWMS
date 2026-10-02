@@ -1,0 +1,135 @@
+name: Sync shared requirements
+
+on:
+  schedule:
+    - cron: "17 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-shared-requirements
+  cancel-in-progress: false
+
+env:
+  SOURCE_REPOSITORY: USACE/cwbi-wm-images
+  SOURCE_REF: cwbi-dev
+  SOURCE_PATH: job_runners/python_java/requirements.txt
+  UPDATE_BRANCH: automation/sync-shared-requirements
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Fetch shared requirements
+        id: requirements
+        env:
+          GH_TOKEN: ${{ secrets.CWBI_WM_IMAGES_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "CWBI_WM_IMAGES_TOKEN is required to read ${SOURCE_REPOSITORY}." >&2
+            exit 1
+          fi
+
+          temporary_file="$(mktemp)"
+          gh api \
+            --header "Accept: application/vnd.github.raw+json" \
+            "repos/${SOURCE_REPOSITORY}/contents/${SOURCE_PATH}?ref=${SOURCE_REF}" \
+            > "${temporary_file}"
+
+          if [[ ! -s "${temporary_file}" ]]; then
+            echo "The source requirements file is empty." >&2
+            exit 1
+          fi
+
+          if cmp --silent "${temporary_file}" requirements/base_requirements.txt; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          mv "${temporary_file}" requirements/base_requirements.txt
+          echo "changed=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Python
+        if: steps.requirements.outputs.changed == 'true'
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+
+      - name: Regenerate Windows dependency lock
+        if: steps.requirements.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install uv==0.12.22
+          uv pip compile \
+            --python-platform windows \
+            --python-version 3.13 \
+            --generate-hashes \
+            --only-binary :all: \
+            --output-file requirements/locked.txt \
+            requirements/base_requirements.txt \
+            requirements/supplemental_requirements.txt
+
+      - name: Create or update pull request
+        if: steps.requirements.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_BRANCH: ${{ github.event.repository.default_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          pull_request_number="$(
+            gh pr list \
+              --head "${UPDATE_BRANCH}" \
+              --base "${BASE_BRANCH}" \
+              --state open \
+              --json number \
+              --jq '.[0].number // empty'
+          )"
+
+          if [[ -n "${pull_request_number}" ]] \
+            && git fetch --no-tags origin "${UPDATE_BRANCH}" \
+            && git diff --quiet FETCH_HEAD -- \
+              requirements/base_requirements.txt requirements/locked.txt; then
+            echo "Pull request #${pull_request_number} is already current."
+            exit 0
+          fi
+
+          git switch -c "${UPDATE_BRANCH}"
+          git add requirements/base_requirements.txt requirements/locked.txt
+          git commit -m "Update shared Python requirements"
+          git push --force origin "HEAD:refs/heads/${UPDATE_BRANCH}"
+
+          if [[ -n "${pull_request_number}" ]]; then
+            echo "Updated pull request #${pull_request_number}."
+            exit 0
+          fi
+
+          cat > "${RUNNER_TEMP}/pull-request-body.md" <<EOF
+          Updates the checked-in requirements snapshot from
+          [\`${SOURCE_REPOSITORY}/${SOURCE_PATH}\`](https://github.com/${SOURCE_REPOSITORY}/blob/${SOURCE_REF}/${SOURCE_PATH})
+          and regenerates the hash-pinned Windows lock.
+
+          The source repository is private, so the resolved requirements remain checked into this repository for users without access.
+          EOF
+
+          gh pr create \
+            --base "${BASE_BRANCH}" \
+            --head "${UPDATE_BRANCH}" \
+            --title "Update shared Python requirements" \
+            --body-file "${RUNNER_TEMP}/pull-request-body.md"
