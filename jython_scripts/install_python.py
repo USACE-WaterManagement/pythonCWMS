@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 import subprocess
 import threading
 import urllib
@@ -18,6 +19,25 @@ from java.awt import (
 from java.awt.event import ActionListener
 from java.io import File as JFile
 from javax.swing import SwingUtilities, JProgressBar # JProgressBar was missing from this specific import line
+from java.security import KeyFactory, Signature
+from java.security.spec import X509EncodedKeySpec
+from java.util import Base64 as JBase64
+
+
+# --- Authenticity (signature) verification --------------------------------
+# Paste the X.509 / SPKI PEM public key whose private half signs releases in CI
+# (see "Sign archive" in .github/workflows/release.yml). When this is set, the
+# installer REFUSES any download that is not covered by a valid signature -- a
+# tampered archive plus a matching hash is no longer sufficient.
+#
+# When left as None, the installer falls back to integrity-only (SHA-256) checks
+# and warns loudly that authenticity is NOT verified.
+#
+# Example:
+# RELEASE_PUBLIC_KEY_PEM = """-----BEGIN PUBLIC KEY-----
+# MIIBIjANBgkqhkiG9w0BAQEF...
+# -----END PUBLIC KEY-----"""
+RELEASE_PUBLIC_KEY_PEM = None
 
 class InstallerGUI(JFrame):
     def __init__(self):
@@ -27,7 +47,8 @@ class InstallerGUI(JFrame):
         self.setLocationRelativeTo(None)
 
         # --- Default hardcoded URL for the configuration file ---
-        # This is the starting point for the Config URL input field.
+        # Always tracks the latest config on main (updated by the release workflow
+        # after each build). Must be https:// (enforced before download).
         self.default_config_url = "https://raw.githubusercontent.com/USACE-WaterManagement/pythonCWMS/refs/heads/main/pythonCWMS_config.json"
 
         # Initialize these as None; they will be populated from the config file
@@ -36,6 +57,7 @@ class InstallerGUI(JFrame):
         self.destination_dir = None
         self.env_var_name = None
         self.python_exe_sub_dir = None
+        self.signature_url = None
 
         self.python_exe_path = None
         self.temp_7z_file = None
@@ -167,21 +189,25 @@ class InstallerGUI(JFrame):
         
         temp_config_filepath = None
         try:
+            if not config_url.lower().startswith("https://"):
+                raise ValueError("Config URL must use https:// for a secure download (got: {}).".format(config_url))
+
             temp_config_file_obj = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
             temp_config_filepath = temp_config_file_obj.name
             temp_config_file_obj.close()
 
             urllib.urlretrieve(config_url, temp_config_filepath)
-            
+
             with open(temp_config_filepath, 'r') as f:
                 config_data = json.load(f)
-            
+
             # Populate instance variables (used by installation thread)
             self.python_7z_url = config_data.get("python_download_url")
             self.expected_sha256_hash = config_data.get("python_expected_hash_sha256")
             self.destination_dir = config_data.get("default_install_directory")
             self.env_var_name = config_data.get("default_env_var_name")
             self.python_exe_sub_dir = config_data.get("python_exe_sub_directory")
+            self.signature_url = config_data.get("python_signature_url")
 
             # Validate essential fields
             if not self.python_7z_url or not self.expected_sha256_hash or \
@@ -289,6 +315,130 @@ class InstallerGUI(JFrame):
             return hasher.hexdigest()
         except Exception, e:
             raise Exception("Failed to calculate hash of {}: {}".format(filepath, e))
+
+    @staticmethod
+    def _is_unsafe_archive_path(entry_path):
+        """Returns True if an archive entry would write outside the extraction
+        directory (absolute path, drive-qualified path, or a '..' traversal)."""
+        if not entry_path:
+            return False
+        normalized = entry_path.replace("\\", "/")
+        # Absolute (POSIX) or drive-qualified (Windows) paths.
+        if normalized.startswith("/") or re.match(r"^[A-Za-z]:", entry_path):
+            return True
+        # Any parent-directory component.
+        if ".." in normalized.split("/"):
+            return True
+        return False
+
+    def _verify_archive_paths(self, seven_z_exe_path, archive_path):
+        """Lists the archive with 7-Zip and rejects it if any entry would escape
+        the destination directory (zip-slip / path traversal protection)."""
+        self._update_ui(lambda: self.log_area.append("Inspecting archive entries for unsafe paths...\n"))
+
+        command = [seven_z_exe_path, "l", "-slt", archive_path]
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
+        stdout_bytes, stderr_bytes = process.communicate()
+
+        if process.returncode != 0:
+            stderr_text = stderr_bytes.decode('utf-8', errors='ignore')
+            raise Exception("Could not list archive contents for safety check: {}".format(stderr_text))
+
+        stdout_text = stdout_bytes.decode('utf-8', errors='ignore')
+
+        bad_entries = []
+        in_file_section = False
+        for raw_line in stdout_text.splitlines():
+            line = raw_line.rstrip()
+            # 7z -slt prints archive-level properties first, then a dashed line,
+            # then one block per contained entry. Only inspect the entry blocks.
+            if line.startswith("----------"):
+                in_file_section = True
+                continue
+            if not in_file_section:
+                continue
+            if line.startswith("Path = "):
+                entry_path = line[len("Path = "):]
+                if self._is_unsafe_archive_path(entry_path):
+                    bad_entries.append(entry_path)
+
+        if bad_entries:
+            preview = "\n".join(bad_entries[:10])
+            raise Exception(
+                "Archive contains unsafe paths (possible path-traversal). "
+                "Refusing to extract.\n{}".format(preview))
+
+        self._update_ui(lambda: self.log_area.append("Archive paths verified safe.\n"))
+
+    def _verify_signature(self, filepath, signature_url):
+        """Verifies a detached RSA (SHA256withRSA) signature over the downloaded
+        file using the embedded RELEASE_PUBLIC_KEY_PEM.
+
+        - If no public key is embedded: logs a loud warning and returns (the
+          SHA-256 check still provides integrity, but NOT authenticity).
+        - If a public key IS embedded: a missing/invalid signature is fatal.
+        """
+        if RELEASE_PUBLIC_KEY_PEM is None:
+            self._update_ui(lambda: self.log_area.append(
+                "\n*** WARNING: No release public key is configured. ***\n"
+                "The download's authenticity is NOT verified -- only its integrity "
+                "(SHA-256) is checked. Set RELEASE_PUBLIC_KEY_PEM to enable signature "
+                "verification.\n\n"))
+            return
+
+        if not signature_url:
+            raise Exception("A release public key is configured but the configuration "
+                            "provides no python_signature_url. Refusing to install an "
+                            "unsigned download.")
+
+        if not signature_url.lower().startswith("https://"):
+            raise Exception("Signature URL must use https:// (got: {}).".format(signature_url))
+
+        self._update_ui(lambda: self.status_label.setText("Status: Verifying signature..."))
+        self._update_ui(lambda: self.log_area.append("Downloading signature from {}...\n".format(signature_url)))
+
+        temp_sig_file = None
+        try:
+            temp_sig_obj = tempfile.NamedTemporaryFile(delete=False, suffix=".sig")
+            temp_sig_file = temp_sig_obj.name
+            temp_sig_obj.close()
+
+            urllib.urlretrieve(signature_url, temp_sig_file)
+
+            with open(temp_sig_file, 'rb') as f:
+                signature_bytes = f.read()
+
+            # Build the RSA public key from the embedded PEM.
+            pem_body = RELEASE_PUBLIC_KEY_PEM.strip()
+            pem_body = pem_body.replace("-----BEGIN PUBLIC KEY-----", "")
+            pem_body = pem_body.replace("-----END PUBLIC KEY-----", "")
+            pem_body = "".join(pem_body.split())
+            der_bytes = JBase64.getDecoder().decode(pem_body)
+
+            key_factory = KeyFactory.getInstance("RSA")
+            public_key = key_factory.generatePublic(X509EncodedKeySpec(der_bytes))
+
+            verifier = Signature.getInstance("SHA256withRSA")
+            verifier.initVerify(public_key)
+
+            with open(filepath, 'rb') as f:
+                while True:
+                    chunk = f.read(65536)
+                    if not chunk:
+                        break
+                    verifier.update(chunk)
+
+            if not verifier.verify(signature_bytes):
+                raise Exception("Signature verification FAILED. The download is not "
+                                "signed by the expected release key and may be tampered with.")
+
+            self._update_ui(lambda: self.log_area.append("Signature verified successfully.\n"))
+        finally:
+            if temp_sig_file and os.path.exists(temp_sig_file):
+                try:
+                    os.remove(temp_sig_file)
+                except Exception:
+                    pass
 
     def _add_to_user_path(self, env_var_name):
         """
@@ -436,6 +586,11 @@ class InstallerGUI(JFrame):
 
             if self.cancel_event.is_set(): raise Exception("Installation cancelled.")
 
+            # --- 2b. Verify Authenticity (Detached Signature) ---
+            self._verify_signature(self.temp_7z_file, self.signature_url)
+
+            if self.cancel_event.is_set(): raise Exception("Installation cancelled.")
+
             # --- 3. Create Destination Directory (if it doesn't exist) ---
             self._update_ui(lambda: self.status_label.setText("Status: Creating destination directory..."))
             try:
@@ -456,7 +611,10 @@ class InstallerGUI(JFrame):
             self._update_ui(lambda: self.progress_bar.setString("Extracting..."))
             self._update_ui(lambda: self.status_label.setText("Status: Extracting files..."))
             self._update_ui(lambda: self.log_area.append("Extracting '{}' to '{}'...\n".format(self.temp_7z_file, current_destination_dir)))
-            
+
+            # Reject path-traversal / absolute-path entries before extracting.
+            self._verify_archive_paths(seven_z_exe_path, self.temp_7z_file)
+
             command = [
                 seven_z_exe_path,
                 "x",
@@ -619,9 +777,9 @@ class InstallerGUI(JFrame):
             JOptionPane.showMessageDialog(self, "Please enter a Python .7z URL.", "Input Error", JOptionPane.ERROR_MESSAGE)
             self.log_area.append("Error: Python .7z URL is empty.\n")
             return
-        if not (current_python_7z_url.startswith("http://") or current_python_7z_url.startswith("https://")):
-            JOptionPane.showMessageDialog(self, "Please enter a valid URL (must start with http:// or https://).", "Input Error", JOptionPane.ERROR_MESSAGE)
-            self.log_area.append("Error: Invalid URL format.\n")
+        if not current_python_7z_url.lower().startswith("https://"):
+            JOptionPane.showMessageDialog(self, "The Python .7z URL must use https:// (cleartext http:// is not allowed).", "Input Error", JOptionPane.ERROR_MESSAGE)
+            self.log_area.append("Error: Python .7z URL must use https://.\n")
             return
 
         if not current_destination_dir:

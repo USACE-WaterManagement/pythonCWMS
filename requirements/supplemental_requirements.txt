@@ -1,6 +1,7 @@
---prefer-binary
+# NOTE: binary-only / hash enforcement is applied by the build workflow (pip flags),
+# not in this file. Do not add "asyncio" here: it is a Python 2 stdlib backport that
+# shadows the real stdlib module on 3.x and is a known typo-squat target.
 aiohttp
-asyncio
 hyswap
 importlib_resources
 jupyterlab

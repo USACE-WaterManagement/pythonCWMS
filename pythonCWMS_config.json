@@ -1,6 +1,7 @@
 {
   "python_download_url": "https://github.com/USACE-WaterManagement/pythonCWMS/releases/download/v1.11/pythonCWMS1.11.7z",
   "python_expected_hash_sha256": "16ABFD6DD419858A95F5DE202E6A1F5F6BD2CCF492C48796BE51E019E309AC80",
+  "python_signature_url": "",
   "default_install_directory": "C:\\hec\\python",
   "default_env_var_name": "PYTHON_CWMS_HOME",
   "python_exe_sub_directory": "pythonCWMS\\python",

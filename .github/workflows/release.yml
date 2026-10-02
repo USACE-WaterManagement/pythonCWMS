@@ -11,10 +11,10 @@ on:
         required: true
         default: '0.81'
 
-# Permissions for creating releases
+# Permissions for creating releases (least privilege: contents:write is needed to
+# push the config commit and publish the release; packages:write was unused).
 permissions:
   contents: write
-  packages: write
   actions: read
 
 env:
@@ -22,6 +22,10 @@ env:
   WINPYTHON_VERSION: "WinPython 3.13.11.0dot"
   WINPYTHON_FILENAME: "WinPython64-3.13.11.0dot_post1.zip"  # ← removed trailing space
   WINPYTHON_DOWNLOAD_URL: "https://github.com/winpython/winpython/releases/download/17.2.20251222post1/WinPython64-3.13.11.0dot_post1.zip"
+  # Known-good SHA256 of WINPYTHON_FILENAME. The build fails if the download does
+  # not match. MUST be updated whenever WINPYTHON_DOWNLOAD_URL changes — confirm
+  # the value against the upstream WinPython release page before trusting it.
+  WINPYTHON_SHA256: "b88c52ccf412161e27c839b0a3802e80d6ca9f036f25f22687a57dc0bbe3858a"
 
 jobs:
   build:
@@ -29,7 +33,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
     - name: Download WinPython
       run: |
@@ -48,6 +52,26 @@ jobs:
           Write-Error "❌ Failed to download $filename"
           exit 1
         }
+
+    - name: Verify WinPython hash
+      run: |
+        $filename = "${{ env.WINPYTHON_FILENAME }}"
+        $expected = "${{ env.WINPYTHON_SHA256 }}".Trim()
+
+        if ([string]::IsNullOrWhiteSpace($expected)) {
+          Write-Error "❌ WINPYTHON_SHA256 is not set. Refusing to build from an unverified download."
+          exit 1
+        }
+
+        $actual = (Get-FileHash -Path $filename -Algorithm SHA256).Hash
+        Write-Host "Expected SHA256: $expected"
+        Write-Host "Actual   SHA256: $actual"
+
+        if ($actual.ToLower() -ne $expected.ToLower()) {
+          Write-Error "❌ WinPython hash mismatch. Download is corrupted or tampered with."
+          exit 1
+        }
+        Write-Host "✓ WinPython hash verified"
 
     - name: Extract WinPython
       run: |
@@ -96,34 +120,60 @@ jobs:
           exit 1
         }
 
-        # ── base requirements ──────────────────────────────────────────────
-        $baseReqs = "requirements\base_requirements.txt"
-        if (Test-Path $baseReqs) {
-          Write-Host "Installing base packages from $baseReqs..."
-          & $pythonPath -m pip install -r $baseReqs
+        # --only-binary=:all: forbids pip from building any sdist, which is the
+        # only way arbitrary code runs during `pip install`. If a build ever fails
+        # because a dependency is published as sdist only, vet that package and add
+        # a narrow exception rather than dropping this flag globally.
+        $pipSecurityFlags = @("--only-binary=:all:")
+
+        # ── preferred path: fully hash-pinned lock ─────────────────────────
+        # Generate with (run on a Windows host so wheel hashes match the build):
+        #   pip install pip-tools
+        #   pip-compile --generate-hashes --output-file requirements/locked.txt `
+        #     requirements/base_requirements.txt requirements/supplemental_requirements.txt
+        $lockReqs = "requirements\locked.txt"
+        if (Test-Path $lockReqs) {
+          Write-Host "Installing from hash-pinned lock $lockReqs..."
+          & $pythonPath -m pip install --require-hashes $pipSecurityFlags -r $lockReqs
 
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "Base package installation failed with exit code: $LASTEXITCODE"
+            Write-Error "Locked package installation failed with exit code: $LASTEXITCODE"
             exit 1
           }
-          Write-Host "✓ Base package installation completed successfully"
+          Write-Host "✓ Hash-pinned installation completed successfully"
         } else {
-          Write-Host "⚠️ $baseReqs not found, skipping base package installation"
-        }
+          Write-Host "⚠️ $lockReqs not found — installing from version-pinned (but un-hashed) requirements."
+          Write-Host "⚠️ Generate requirements/locked.txt to enable --require-hashes supply-chain protection."
 
-        # ── supplemental requirements ──────────────────────────────────────
-        $suppReqs = "requirements\supplemental_requirements.txt"
-        if (Test-Path $suppReqs) {
-          Write-Host "Installing supplemental packages from $suppReqs..."
-          & $pythonPath -m pip install -r $suppReqs
+          # ── base requirements ────────────────────────────────────────────
+          $baseReqs = "requirements\base_requirements.txt"
+          if (Test-Path $baseReqs) {
+            Write-Host "Installing base packages from $baseReqs..."
+            & $pythonPath -m pip install $pipSecurityFlags -r $baseReqs
 
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Supplemental package installation failed with exit code: $LASTEXITCODE"
-            exit 1
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Base package installation failed with exit code: $LASTEXITCODE"
+              exit 1
+            }
+            Write-Host "✓ Base package installation completed successfully"
+          } else {
+            Write-Host "⚠️ $baseReqs not found, skipping base package installation"
           }
-          Write-Host "✓ Supplemental package installation completed successfully"
-        } else {
-          Write-Host "⚠️ $suppReqs not found, skipping supplemental package installation"
+
+          # ── supplemental requirements ─────────────────────────────────────
+          $suppReqs = "requirements\supplemental_requirements.txt"
+          if (Test-Path $suppReqs) {
+            Write-Host "Installing supplemental packages from $suppReqs..."
+            & $pythonPath -m pip install $pipSecurityFlags -r $suppReqs
+
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Supplemental package installation failed with exit code: $LASTEXITCODE"
+              exit 1
+            }
+            Write-Host "✓ Supplemental package installation completed successfully"
+          } else {
+            Write-Host "⚠️ $suppReqs not found, skipping supplemental package installation"
+          }
         }
 
     - name: Run setup script (if exists)
@@ -246,6 +296,46 @@ jobs:
         echo "ARCHIVE_HASH=$hashString" >> $env:GITHUB_ENV
         Write-Host "✓ SHA256: $hashString"
 
+    # Authenticity (not just integrity): sign the archive with a private RSA key held
+    # only as a repo secret. The installer verifies the matching PUBLIC key, so a
+    # tampered archive + matching hash is no longer enough to pass — the attacker
+    # would also need the private key.
+    #
+    # One-time setup by a maintainer:
+    #   1. Generate a keypair (PKCS#8 private, X.509/SPKI public):
+    #        openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out private.pem
+    #        openssl rsa -in private.pem -pubout -out public.pem
+    #   2. Add the contents of private.pem as the repo secret RELEASE_SIGNING_PRIVATE_KEY.
+    #   3. Paste the contents of public.pem into RELEASE_PUBLIC_KEY_PEM in
+    #      jython_scripts/install_python.py.
+    # Until the secret is set, this step no-ops and the release ships unsigned.
+    - name: Sign archive
+      shell: pwsh
+      env:
+        RELEASE_SIGNING_PRIVATE_KEY: ${{ secrets.RELEASE_SIGNING_PRIVATE_KEY }}
+      run: |
+        $archiveName = "${{ env.ARCHIVE_NAME }}"
+        $sigName = "$archiveName.sig"
+
+        if ([string]::IsNullOrWhiteSpace($env:RELEASE_SIGNING_PRIVATE_KEY)) {
+          Write-Host "::warning::RELEASE_SIGNING_PRIVATE_KEY is not set - shipping an UNSIGNED release (integrity only, no authenticity)."
+          echo "SIGNATURE_NAME=" >> $env:GITHUB_ENV
+          exit 0
+        }
+
+        $rsa = [System.Security.Cryptography.RSA]::Create()
+        $rsa.ImportFromPem($env:RELEASE_SIGNING_PRIVATE_KEY)
+
+        $bytes = [System.IO.File]::ReadAllBytes($archiveName)
+        $sig = $rsa.SignData(
+          $bytes,
+          [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+          [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+        [System.IO.File]::WriteAllBytes($sigName, $sig)
+
+        Write-Host "✓ Wrote detached signature: $sigName ($($sig.Length) bytes)"
+        echo "SIGNATURE_NAME=$sigName" >> $env:GITHUB_ENV
+
     - name: Update and commit config JSON
       run: |
         $repoOwner = "${{ github.repository_owner }}"
@@ -267,6 +357,14 @@ jobs:
 
         $config.python_download_url = "https://github.com/$repoOwner/$repoName/releases/download/v$version/$archiveName"
         $config.python_expected_hash_sha256 = $hash
+
+        $signatureName = "${{ env.SIGNATURE_NAME }}"
+        if (-not [string]::IsNullOrWhiteSpace($signatureName)) {
+          $config.python_signature_url = "https://github.com/$repoOwner/$repoName/releases/download/v$version/$signatureName"
+        } else {
+          $config.python_signature_url = ""
+        }
+
         $config.default_install_directory = "C:\hec\python"
         $config.default_env_var_name = "PYTHON_CWMS_HOME"
         $config.python_exe_sub_directory = "pythonCWMS\python"
@@ -316,7 +414,7 @@ jobs:
         }
 
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
       with:
         tag_name: ${{ github.ref_name || format('v{0}', github.event.inputs.version) }}
         name: Python CWMS ${{ env.VERSION }}
@@ -324,6 +422,7 @@ jobs:
         prerelease: false
         files: |
           ${{ env.ARCHIVE_NAME }}
+          ${{ env.SIGNATURE_NAME }}
           pythonCWMS_config.json
         body: |
           ## Python CWMS ${{ env.VERSION }}
