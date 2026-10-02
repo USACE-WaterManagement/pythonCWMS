@@ -30,14 +30,17 @@ from java.util import Base64 as JBase64
 # installer REFUSES any download that is not covered by a valid signature -- a
 # tampered archive plus a matching hash is no longer sufficient.
 #
-# When left as None, the installer falls back to integrity-only (SHA-256) checks
-# and warns loudly that authenticity is NOT verified.
-#
-# Example:
-# RELEASE_PUBLIC_KEY_PEM = """-----BEGIN PUBLIC KEY-----
-# MIIBIjANBgkqhkiG9w0BAQEF...
-# -----END PUBLIC KEY-----"""
-RELEASE_PUBLIC_KEY_PEM = None
+RELEASE_PUBLIC_KEY_PEM = """-----BEGIN PUBLIC KEY-----
+MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAzklEzbXZIq3nCn9r/KMF
+O/0oPb4fNkmiCPurHJoC7yorxxSORhl6o/Mmh9hNTrqg+fgS/bKds9nlIEnFOhVG
+G2hSHm3UsbQPN9RovDqT5fUSI+qRULffWtGM6JKdcQ6vADUaMj+h9U6xJiBDEEvg
+kAlr4XVJucwx0fkxTc0gfLWjVGzbZ1UeNLcAO3i6vgHML1HyFGNbbzWmKiDYmux6
+fDJnbBHx0EzfkWksZBd+i9VSwpLYs7+aXKQp31RD0xrSky89JMTwoWvCe0RdjunS
+PfFlGgF/u50iolCzvf8A27VBCTAK43AQ7MBrHhqwjpRNUKHbik+AVppNiO4dNrdw
+t63yMmeoX96uv2OjRgkN+DHBR+CKh+3+usqqAtCM4bvmXVBdy2YMblnlAS1MWGu3
+O8tLhAKWsj+S3DMCOOQwLnO1LP0B8qeootWor4+1QOMf3u1anL8Id3DmF58PbUma
+lnhhYtfCPLW1LlMaA68Tdzil4R5uqpmwghQ0e3k6x9fJAgMBAAE=
+-----END PUBLIC KEY-----"""
 
 class InstallerGUI(JFrame):
     def __init__(self):
@@ -326,8 +329,8 @@ class InstallerGUI(JFrame):
         # Absolute (POSIX) or drive-qualified (Windows) paths.
         if normalized.startswith("/") or re.match(r"^[A-Za-z]:", entry_path):
             return True
-        # Any parent-directory component.
-        if ".." in normalized.split("/"):
+        # Any parent-directory component or NTFS alternate data stream.
+        if ".." in normalized.split("/") or ":" in entry_path:
             return True
         return False
 
@@ -347,6 +350,8 @@ class InstallerGUI(JFrame):
         stdout_text = stdout_bytes.decode('utf-8', errors='ignore')
 
         bad_entries = []
+        unsafe_link_entries = []
+        current_entry = None
         in_file_section = False
         for raw_line in stdout_text.splitlines():
             line = raw_line.rstrip()
@@ -359,13 +364,18 @@ class InstallerGUI(JFrame):
                 continue
             if line.startswith("Path = "):
                 entry_path = line[len("Path = "):]
+                current_entry = entry_path
                 if self._is_unsafe_archive_path(entry_path):
                     bad_entries.append(entry_path)
 
-        if bad_entries:
-            preview = "\n".join(bad_entries[:10])
+            if line.startswith(("Symbolic Link = ", "Hard Link = ", "Reparse Point = ")):
+                unsafe_link_entries.append(current_entry or line)
+
+        unsafe_entries = bad_entries + unsafe_link_entries
+        if unsafe_entries:
+            preview = "\n".join(unsafe_entries[:10])
             raise Exception(
-                "Archive contains unsafe paths (possible path-traversal). "
+                "Archive contains unsafe paths or links (possible path-traversal). "
                 "Refusing to extract.\n{}".format(preview))
 
         self._update_ui(lambda: self.log_area.append("Archive paths verified safe.\n"))
@@ -374,17 +384,11 @@ class InstallerGUI(JFrame):
         """Verifies a detached RSA (SHA256withRSA) signature over the downloaded
         file using the embedded RELEASE_PUBLIC_KEY_PEM.
 
-        - If no public key is embedded: logs a loud warning and returns (the
-          SHA-256 check still provides integrity, but NOT authenticity).
-        - If a public key IS embedded: a missing/invalid signature is fatal.
+        A missing public key, missing signature, or invalid signature is fatal.
         """
-        if RELEASE_PUBLIC_KEY_PEM is None:
-            self._update_ui(lambda: self.log_area.append(
-                "\n*** WARNING: No release public key is configured. ***\n"
-                "The download's authenticity is NOT verified -- only its integrity "
-                "(SHA-256) is checked. Set RELEASE_PUBLIC_KEY_PEM to enable signature "
-                "verification.\n\n"))
-            return
+        if not RELEASE_PUBLIC_KEY_PEM:
+            raise Exception("No release public key is configured. Refusing to install "
+                            "an unauthenticated download.")
 
         if not signature_url:
             raise Exception("A release public key is configured but the configuration "
@@ -846,4 +850,3 @@ class InstallerGUI(JFrame):
 if __name__ == "__main__":
     frame = InstallerGUI()
     frame.setVisible(True)
-

@@ -44,9 +44,9 @@ blocked on your network), point `Config URL:` at the `pythonCWMS_config.json` as
 a specific release instead (e.g. `https://github.com/USACE-WaterManagement/pythonCWMS/releases/download/v1.11/pythonCWMS_config.json`)
 and reload the configuration.
 
-Note: if the maintainer has enabled release signing (a public key is embedded in the
-installer), the installer will refuse any download that does not have a valid
-signature. An unsigned or tampered archive will not install.
+Release signing is mandatory. The installer refuses any download that does not have a
+valid signature from the release key embedded in the script. An unsigned or tampered
+archive will not install.
 
 You can also just download the latest release file (e.g. `pythonCWMS1.01.7z` (https://github.com/USACE-WaterManagement/pythonCWMS/releases/)) and unzip the portable python distribution and setup your user environment variables yourself to add the python to your path.
 

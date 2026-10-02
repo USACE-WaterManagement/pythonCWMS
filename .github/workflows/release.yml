@@ -120,61 +120,24 @@ jobs:
           exit 1
         }
 
-        # --only-binary=:all: forbids pip from building any sdist, which is the
-        # only way arbitrary code runs during `pip install`. If a build ever fails
-        # because a dependency is published as sdist only, vet that package and add
-        # a narrow exception rather than dropping this flag globally.
+        # Install only reviewed, hash-pinned wheels. Wheels can still contain
+        # executable Python code, so both restrictions are required.
         $pipSecurityFlags = @("--only-binary=:all:")
 
-        # ── preferred path: fully hash-pinned lock ─────────────────────────
-        # Generate with (run on a Windows host so wheel hashes match the build):
-        #   pip install pip-tools
-        #   pip-compile --generate-hashes --output-file requirements/locked.txt `
-        #     requirements/base_requirements.txt requirements/supplemental_requirements.txt
         $lockReqs = "requirements\locked.txt"
-        if (Test-Path $lockReqs) {
-          Write-Host "Installing from hash-pinned lock $lockReqs..."
-          & $pythonPath -m pip install --require-hashes $pipSecurityFlags -r $lockReqs
-
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Locked package installation failed with exit code: $LASTEXITCODE"
-            exit 1
-          }
-          Write-Host "✓ Hash-pinned installation completed successfully"
-        } else {
-          Write-Host "⚠️ $lockReqs not found — installing from version-pinned (but un-hashed) requirements."
-          Write-Host "⚠️ Generate requirements/locked.txt to enable --require-hashes supply-chain protection."
-
-          # ── base requirements ────────────────────────────────────────────
-          $baseReqs = "requirements\base_requirements.txt"
-          if (Test-Path $baseReqs) {
-            Write-Host "Installing base packages from $baseReqs..."
-            & $pythonPath -m pip install $pipSecurityFlags -r $baseReqs
-
-            if ($LASTEXITCODE -ne 0) {
-              Write-Error "Base package installation failed with exit code: $LASTEXITCODE"
-              exit 1
-            }
-            Write-Host "✓ Base package installation completed successfully"
-          } else {
-            Write-Host "⚠️ $baseReqs not found, skipping base package installation"
-          }
-
-          # ── supplemental requirements ─────────────────────────────────────
-          $suppReqs = "requirements\supplemental_requirements.txt"
-          if (Test-Path $suppReqs) {
-            Write-Host "Installing supplemental packages from $suppReqs..."
-            & $pythonPath -m pip install $pipSecurityFlags -r $suppReqs
-
-            if ($LASTEXITCODE -ne 0) {
-              Write-Error "Supplemental package installation failed with exit code: $LASTEXITCODE"
-              exit 1
-            }
-            Write-Host "✓ Supplemental package installation completed successfully"
-          } else {
-            Write-Host "⚠️ $suppReqs not found, skipping supplemental package installation"
-          }
+        if (-not (Test-Path $lockReqs)) {
+          Write-Error "$lockReqs is required. Regenerate it after changing either input requirements file."
+          exit 1
         }
+
+        Write-Host "Installing from hash-pinned lock $lockReqs..."
+        & $pythonPath -m pip install --require-hashes $pipSecurityFlags -r $lockReqs
+
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "Locked package installation failed with exit code: $LASTEXITCODE"
+          exit 1
+        }
+        Write-Host "✓ Hash-pinned installation completed successfully"
 
     - name: Run setup script (if exists)
       run: |
@@ -208,9 +171,14 @@ jobs:
       run: |
         $winpythonDir = Get-ChildItem -Path "winpython_extracted" -Directory | Select-Object -First 1
         $version = if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
-          "${{ github.event.inputs.version }}"
+          "${{ github.event.inputs.version }}" -replace "^v", ""
         } else {
           "${{ github.ref_name }}" -replace "^v", ""
+        }
+        $releaseTag = if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
+          "v$version"
+        } else {
+          "${{ github.ref_name }}"
         }
         $finalDir = "pythonCWMS"
 
@@ -229,6 +197,7 @@ jobs:
 
         echo "FINAL_DIR=$finalDir" >> $env:GITHUB_ENV
         echo "VERSION=$version" >> $env:GITHUB_ENV
+        echo "RELEASE_TAG=$releaseTag" >> $env:GITHUB_ENV
 
         $winpythonSubDir = $winpythonDir.Name
         echo "WINPYTHON_SUBDIR=$winpythonSubDir" >> $env:GITHUB_ENV
@@ -308,7 +277,6 @@ jobs:
     #   2. Add the contents of private.pem as the repo secret RELEASE_SIGNING_PRIVATE_KEY.
     #   3. Paste the contents of public.pem into RELEASE_PUBLIC_KEY_PEM in
     #      jython_scripts/install_python.py.
-    # Until the secret is set, this step no-ops and the release ships unsigned.
     - name: Sign archive
       shell: pwsh
       env:
@@ -318,31 +286,65 @@ jobs:
         $sigName = "$archiveName.sig"
 
         if ([string]::IsNullOrWhiteSpace($env:RELEASE_SIGNING_PRIVATE_KEY)) {
-          Write-Host "::warning::RELEASE_SIGNING_PRIVATE_KEY is not set - shipping an UNSIGNED release (integrity only, no authenticity)."
-          echo "SIGNATURE_NAME=" >> $env:GITHUB_ENV
-          exit 0
+          Write-Error "RELEASE_SIGNING_PRIVATE_KEY is required. Refusing to publish an unsigned release."
+          exit 1
         }
 
         $rsa = [System.Security.Cryptography.RSA]::Create()
-        $rsa.ImportFromPem($env:RELEASE_SIGNING_PRIVATE_KEY)
-
-        $bytes = [System.IO.File]::ReadAllBytes($archiveName)
-        $sig = $rsa.SignData(
-          $bytes,
-          [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-          [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+        $archiveStream = $null
+        try {
+          $rsa.ImportFromPem($env:RELEASE_SIGNING_PRIVATE_KEY)
+          $archiveStream = [System.IO.File]::OpenRead($archiveName)
+          $sig = $rsa.SignData(
+            $archiveStream,
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+        } finally {
+          if ($null -ne $archiveStream) { $archiveStream.Dispose() }
+          $rsa.Dispose()
+        }
         [System.IO.File]::WriteAllBytes($sigName, $sig)
 
+        $installerSource = Get-Content "jython_scripts\install_python.py" -Raw
+        $keyMatch = [regex]::Match(
+          $installerSource,
+          '(?s)RELEASE_PUBLIC_KEY_PEM\s*=\s*"""(?<pem>.*?)"""')
+        if (-not $keyMatch.Success) {
+          Write-Error "Could not find the embedded release public key in the installer."
+          exit 1
+        }
+
+        $publicRsa = [System.Security.Cryptography.RSA]::Create()
+        $verifyStream = $null
+        try {
+          $publicRsa.ImportFromPem($keyMatch.Groups['pem'].Value.Trim())
+          $verifyStream = [System.IO.File]::OpenRead($archiveName)
+          $verified = $publicRsa.VerifyData(
+            $verifyStream,
+            $sig,
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+        } finally {
+          if ($null -ne $verifyStream) { $verifyStream.Dispose() }
+          $publicRsa.Dispose()
+        }
+        if (-not $verified) {
+          Write-Error "The signing private key does not match the public key embedded in the installer."
+          exit 1
+        }
+
         Write-Host "✓ Wrote detached signature: $sigName ($($sig.Length) bytes)"
+        Write-Host "✓ Verified signature with the installer's embedded public key"
         echo "SIGNATURE_NAME=$sigName" >> $env:GITHUB_ENV
 
-    - name: Update and commit config JSON
+    - name: Prepare config JSON
       run: |
         $repoOwner = "${{ github.repository_owner }}"
         $repoName = "${{ github.event.repository.name }}"
         $version = "${{ env.VERSION }}"
         $archiveName = "${{ env.ARCHIVE_NAME }}"
         $hash = "${{ env.ARCHIVE_HASH }}"
+        $releaseTag = "${{ env.RELEASE_TAG }}"
         $winpythonSubDir = "${{ env.WINPYTHON_SUBDIR }}"
 
         Write-Host "Updating configuration file..."
@@ -355,15 +357,15 @@ jobs:
           Write-Host "⚠️ No existing config file, creating new one"
         }
 
-        $config.python_download_url = "https://github.com/$repoOwner/$repoName/releases/download/v$version/$archiveName"
+        $config.python_download_url = "https://github.com/$repoOwner/$repoName/releases/download/$releaseTag/$archiveName"
         $config.python_expected_hash_sha256 = $hash
 
         $signatureName = "${{ env.SIGNATURE_NAME }}"
-        if (-not [string]::IsNullOrWhiteSpace($signatureName)) {
-          $config.python_signature_url = "https://github.com/$repoOwner/$repoName/releases/download/v$version/$signatureName"
-        } else {
-          $config.python_signature_url = ""
+        if ([string]::IsNullOrWhiteSpace($signatureName)) {
+          Write-Error "SIGNATURE_NAME is empty. Refusing to publish an unsigned configuration."
+          exit 1
         }
+        $config.python_signature_url = "https://github.com/$repoOwner/$repoName/releases/download/$releaseTag/$signatureName"
 
         $config.default_install_directory = "C:\hec\python"
         $config.default_env_var_name = "PYTHON_CWMS_HOME"
@@ -380,18 +382,6 @@ jobs:
 
         Write-Host "✓ Updated config file:"
         Get-Content "pythonCWMS_config.json"
-
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add pythonCWMS_config.json
-
-        if (-not (git diff --staged --quiet)) {
-          git commit -m "Update config for release $version [skip ci]"
-          git push origin HEAD:main
-          Write-Host "✓ Updated and committed config file to repository"
-        } else {
-          Write-Host "No changes to config file"
-        }
 
         Copy-Item -Path "pythonCWMS_config.json" -Destination "${{ env.FINAL_DIR }}\pythonCWMS_config.json"
         Write-Host "✓ Copied config file to final directory"
@@ -416,7 +406,7 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
       with:
-        tag_name: ${{ github.ref_name || format('v{0}', github.event.inputs.version) }}
+        tag_name: ${{ env.RELEASE_TAG }}
         name: Python CWMS ${{ env.VERSION }}
         draft: false
         prerelease: false
@@ -453,3 +443,17 @@ jobs:
           Use the `pythonCWMS_config.json` file with your installer scripts.
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Publish config to main
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add pythonCWMS_config.json
+
+        if (-not (git diff --staged --quiet)) {
+          git commit -m "Update config for release ${{ env.VERSION }} [skip ci]"
+          git push origin HEAD:main
+          Write-Host "✓ Updated and committed config file after publishing release assets"
+        } else {
+          Write-Host "No changes to config file"
+        }

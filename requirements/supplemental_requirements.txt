@@ -1,12 +1,12 @@
 # NOTE: binary-only / hash enforcement is applied by the build workflow (pip flags),
 # not in this file. Do not add "asyncio" here: it is a Python 2 stdlib backport that
 # shadows the real stdlib module on 3.x and is a known typo-squat target.
-aiohttp
-hyswap
-importlib_resources
-jupyterlab
-metar
-pip-system-certs
-python-dotenv
-zipp
-JPype1
+aiohttp==3.14.3
+hyswap==1.0.1
+importlib_resources==7.1.0
+jupyterlab==4.6.4
+metar==2.0.1
+pip-system-certs==5.3
+python-dotenv==1.2.4
+zipp==4.1.0
+JPype1==1.7.1
