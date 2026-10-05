@@ -166,6 +166,12 @@ try {
     Assert-True ($result.ExitCode -ne 0 -and (Test-Path (Join-Path $existingTarget 'marker.txt'))) 'Existing directory was not protected.'
     Write-Host 'PASS: existing-directory protection'
 
+    $legacyHome = Join-Path $TestRoot 'legacy\pythonCWMS\python'
+    $pathBeforeMigration = [Environment]::GetEnvironmentVariable('Path', $EnvironmentTarget)
+    [Environment]::SetEnvironmentVariable('PYTHON_CWMS_HOME', $legacyHome, $EnvironmentTarget)
+    [Environment]::SetEnvironmentVariable(
+        'Path', "$legacyHome;$legacyHome\Scripts;$pathBeforeMigration", $EnvironmentTarget)
+
     $successTarget = Join-Path $TestRoot 'success-target'
     $result = Invoke-InstallerTest $config $successTarget
     Assert-True ($result.ExitCode -eq 0 -and (Test-Path (Join-Path $successTarget 'python\python.exe'))) "Fixture install failed: $($result.Output)"
@@ -173,11 +179,24 @@ try {
 
     $result = Invoke-InstallerTest $config $successTarget -Force
     Assert-True ($result.ExitCode -eq 0) "Forced fixture reinstall failed: $($result.Output)"
-    $userPath = [Environment]::GetEnvironmentVariable('Path', $EnvironmentTarget)
-    $homeEntries = @($userPath.Split(';') | Where-Object { $_.TrimEnd([char[]]'\') -eq '%PYTHON_CWMS_HOME%' })
-    $scriptsEntries = @($userPath.Split(';') | Where-Object { $_.TrimEnd([char[]]'\') -eq '%PYTHON_CWMS_HOME%\Scripts' })
+    $environmentKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
+    try {
+        $userPath = [string]$environmentKey.GetValue(
+            'Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        $pathKind = $environmentKey.GetValueKind('Path')
+    }
+    finally {
+        $environmentKey.Dispose()
+    }
+    $userPathParts = @($userPath.Split(';') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $homeEntries = @($userPathParts | Where-Object { $_.TrimEnd([char[]]'\') -eq '%PYTHON_CWMS_HOME%' })
+    $scriptsEntries = @($userPathParts | Where-Object { $_.TrimEnd([char[]]'\') -eq '%PYTHON_CWMS_HOME%\Scripts' })
+    $legacyEntries = @($userPathParts | Where-Object { $_.TrimEnd([char[]]'\') -like "$legacyHome*" })
+    Assert-True ($pathKind -eq [Microsoft.Win32.RegistryValueKind]::ExpandString) 'User PATH does not preserve environment-variable expansion.'
+    Assert-True ($userPathParts[0] -eq '%PYTHON_CWMS_HOME%' -and $userPathParts[1] -eq '%PYTHON_CWMS_HOME%\Scripts') 'Python CWMS entries are not first in the user PATH.'
     Assert-True ($homeEntries.Count -eq 1 -and $scriptsEntries.Count -eq 1) 'PATH entries are not idempotent.'
-    Write-Host 'PASS: idempotent PATH updates'
+    Assert-True ($legacyEntries.Count -eq 0) 'Legacy Python CWMS PATH entries were not removed.'
+    Write-Host 'PASS: PATH migration and idempotent updates'
 
     $rsa.Dispose()
     Write-Host 'All Windows installer checks passed.'

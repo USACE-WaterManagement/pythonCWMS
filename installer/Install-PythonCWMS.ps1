@@ -220,27 +220,71 @@ function Expand-SafeZip {
     }
 }
 
+function Send-EnvironmentChanged {
+    try {
+        if (-not ('PythonCwmsEnvironmentBroadcast' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class PythonCwmsEnvironmentBroadcast {
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr SendMessageTimeout(
+        IntPtr hWnd, uint message, UIntPtr wParam, string lParam,
+        uint flags, uint timeout, out UIntPtr result);
+}
+'@
+        }
+
+        $result = [UIntPtr]::Zero
+        [void][PythonCwmsEnvironmentBroadcast]::SendMessageTimeout(
+            [IntPtr]0xffff, 0x001a, [UIntPtr]::Zero, 'Environment', 0x0002, 5000, [ref]$result)
+    }
+    catch {
+        Write-Warning "Could not notify running applications about the environment change. Close all terminal windows or sign out before using Python CWMS."
+    }
+}
+
 function Set-UserEnvironment {
-    param([string]$PythonHome)
+    param([string]$PythonHome, [string]$PreviousPythonHome)
 
-    $target = [System.EnvironmentVariableTarget]::User
-    [System.Environment]::SetEnvironmentVariable("PYTHON_CWMS_HOME", $PythonHome, $target)
-    $path = [System.Environment]::GetEnvironmentVariable("Path", $target)
-    $parts = New-Object System.Collections.Generic.List[string]
-    if (-not [string]::IsNullOrWhiteSpace($path)) {
-        foreach ($part in $path.Split(';')) {
-            if (-not [string]::IsNullOrWhiteSpace($part)) { $parts.Add($part) }
+    $environmentKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+    try {
+        $pathValue = $environmentKey.GetValue(
+            'Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        $parts = New-Object System.Collections.Generic.List[string]
+        if (-not [string]::IsNullOrWhiteSpace([string]$pathValue)) {
+            foreach ($part in ([string]$pathValue).Split(';')) {
+                if ([string]::IsNullOrWhiteSpace($part)) { continue }
+                $normalized = $part.Trim().Trim('"').TrimEnd([char[]]'\/')
+                $isManagedEntry = (
+                    $normalized -ieq '%PYTHON_CWMS_HOME%' -or
+                    $normalized -ieq '%PYTHON_CWMS_HOME%\Scripts' -or
+                    $normalized -ieq $PythonHome.TrimEnd([char[]]'\/') -or
+                    $normalized -ieq (Join-Path $PythonHome 'Scripts').TrimEnd([char[]]'\/') -or
+                    (-not [string]::IsNullOrWhiteSpace($PreviousPythonHome) -and
+                        ($normalized -ieq $PreviousPythonHome.TrimEnd([char[]]'\/') -or
+                         $normalized -ieq (Join-Path $PreviousPythonHome 'Scripts').TrimEnd([char[]]'\/'))) -or
+                    $normalized -match '(?i)[\\/]pythonCWMS[\\/]python(?:[\\/]Scripts)?$'
+                )
+                if (-not $isManagedEntry) { $parts.Add($part.Trim()) }
+            }
         }
+
+        # Keep the managed interpreter ahead of WindowsApps and other user-level
+        # Python installations while preserving all unrelated PATH entries.
+        $parts.Insert(0, '%PYTHON_CWMS_HOME%\Scripts')
+        $parts.Insert(0, '%PYTHON_CWMS_HOME%')
+        $environmentKey.SetValue(
+            'PYTHON_CWMS_HOME', $PythonHome, [Microsoft.Win32.RegistryValueKind]::String)
+        $environmentKey.SetValue(
+            'Path', ($parts -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString)
+    }
+    finally {
+        $environmentKey.Dispose()
     }
 
-    foreach ($required in @('%PYTHON_CWMS_HOME%', '%PYTHON_CWMS_HOME%\Scripts')) {
-        $found = $false
-        foreach ($part in $parts) {
-            if ($part.Trim().TrimEnd([char[]]'\') -eq $required.TrimEnd([char[]]'\')) { $found = $true; break }
-        }
-        if (-not $found) { $parts.Add($required) }
-    }
-    [System.Environment]::SetEnvironmentVariable("Path", ($parts -join ';'), $target)
+    Send-EnvironmentChanged
 }
 
 $workRoot = $null
@@ -379,12 +423,13 @@ try {
     $oldHome = [System.Environment]::GetEnvironmentVariable("PYTHON_CWMS_HOME", $target)
     $oldPath = [System.Environment]::GetEnvironmentVariable("Path", $target)
     $environmentStarted = $true
-    Set-UserEnvironment (Join-Path $InstallRoot "python")
+    Set-UserEnvironment (Join-Path $InstallRoot "python") $oldHome
 
     Write-Host ""
     Write-Host "Python CWMS $($config.version) installed successfully at: $InstallRoot"
     if ($null -ne $backupPath) { Write-Host "Previous installation retained at: $backupPath" }
-    Write-Host "Open a new command prompt before using pythonCWMS."
+    Write-Host "PYTHON_CWMS_HOME was set to: $(Join-Path $InstallRoot 'python')"
+    Write-Host "Close all terminal windows, then open a new one before using pythonCWMS."
     $exitCode = 0
 }
 catch {
