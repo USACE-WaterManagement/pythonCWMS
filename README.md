@@ -8,8 +8,10 @@ The first release that supports the Windows installer is **v2.0**. Release v1.11
 
 1. Open the [latest release](https://github.com/USACE-WaterManagement/pythonCWMS/releases/latest).
 2. Download `PythonCWMS-Installer.zip`.
-3. Extract the installer ZIP.
-4. Double-click `Install-PythonCWMS.cmd`.
+3. Extract the installer ZIP. It creates a `PythonCWMS-Installer` folder.
+4. Open that folder and double-click `Install-PythonCWMS.cmd`.
+
+After a successful installation, the installer removes `PythonCWMS-Installer.zip` and its extracted folder when possible.
 
 The installer downloads the signed portable environment, verifies its SHA-256 hash and RSA signature, safely extracts it, and runs Python before changing an existing installation.
 

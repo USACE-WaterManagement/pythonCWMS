@@ -259,8 +259,10 @@ jobs:
           }
           $config | ConvertTo-Json | Out-File (Join-Path $assetRoot 'pythonCWMS_config.json') -Encoding utf8
 
-          Compress-Archive -Path installer/Install-PythonCWMS.cmd, installer/Install-PythonCWMS.ps1 `
-            -DestinationPath (Join-Path $assetRoot 'PythonCWMS-Installer.zip')
+          $installerDirectory = Join-Path $assetRoot 'PythonCWMS-Installer'
+          New-Item -ItemType Directory -Path $installerDirectory | Out-Null
+          Copy-Item installer/Install-PythonCWMS.cmd, installer/Install-PythonCWMS.ps1 -Destination $installerDirectory
+          Compress-Archive -Path $installerDirectory -DestinationPath (Join-Path $assetRoot 'PythonCWMS-Installer.zip')
           $releaseConfig = (Join-Path $assetRoot 'pythonCWMS_config.json').Replace('\', '/')
           $installerBundle = (Join-Path $assetRoot 'PythonCWMS-Installer.zip').Replace('\', '/')
           "RELEASE_CONFIG=$releaseConfig" >> $env:GITHUB_ENV
@@ -287,10 +289,10 @@ jobs:
             ### Install or migrate
 
             1. Download `PythonCWMS-Installer.zip`.
-            2. Extract it.
-            3. Double-click `Install-PythonCWMS.cmd`.
+            2. Extract it; the archive creates a `PythonCWMS-Installer` folder.
+            3. Open that folder and double-click `Install-PythonCWMS.cmd`.
 
-            The default location is `C:\hec\python\pythonCWMS`. If it already exists, the installer asks before replacing it, defaults to Yes, and retains the previous installation as a timestamped backup. Use `-Force` to approve replacement non-interactively.
+            After a successful installation, the installer removes `PythonCWMS-Installer.zip` and its extracted folder when possible. The default location is `C:\hec\python\pythonCWMS`. If it already exists, the installer asks before replacing it, defaults to Yes, and retains the previous installation as a timestamped backup. Use `-Force` to approve replacement non-interactively.
 
             Release v1.11 cannot be used by the new installer because it has no detached signature asset. Do not modify the historical v1.11 release.
 

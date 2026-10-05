@@ -87,8 +87,14 @@ function Write-TestConfig {
 }
 
 function Invoke-InstallerTest {
-    param([string]$Config, [string]$Target, [switch]$Force, [string]$PromptResponse)
-    $arguments = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $Installer,
+    param(
+        [string]$Config,
+        [string]$Target,
+        [switch]$Force,
+        [string]$PromptResponse,
+        [string]$InstallerPath = $Installer
+    )
+    $arguments = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $InstallerPath,
         '-InstallRoot', $Target, '-ConfigFile', $Config, '-PublicKeyFile', $script:PublicKeyPath)
     if ($Force) { $arguments += '-Force' }
 
@@ -218,6 +224,22 @@ try {
     Assert-True ($homeEntries.Count -eq 1 -and $scriptsEntries.Count -eq 1) 'PATH entries are not idempotent.'
     Assert-True ($legacyEntries.Count -eq 0) 'Legacy Python CWMS PATH entries were not removed.'
     Write-Host 'PASS: PATH migration and idempotent updates'
+
+    $cleanupParent = Join-Path $TestRoot 'cleanup-fixture'
+    $cleanupBundle = Join-Path $cleanupParent 'PythonCWMS-Installer'
+    [IO.Directory]::CreateDirectory($cleanupBundle) | Out-Null
+    $cleanupInstaller = Join-Path $cleanupBundle 'Install-PythonCWMS.ps1'
+    Copy-Item -LiteralPath $Installer -Destination $cleanupInstaller
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot '..\Install-PythonCWMS.cmd') -Destination $cleanupBundle
+    $cleanupArchive = Join-Path $cleanupParent 'PythonCWMS-Installer.zip'
+    [IO.File]::WriteAllBytes($cleanupArchive, [byte[]](1,2,3,4))
+    $result = Invoke-InstallerTest $config (Join-Path $TestRoot 'cleanup-target') -InstallerPath $cleanupInstaller
+    $cleanupDeadline = [DateTime]::UtcNow.AddSeconds(15)
+    while (((Test-Path $cleanupBundle) -or (Test-Path $cleanupArchive)) -and [DateTime]::UtcNow -lt $cleanupDeadline) {
+        Start-Sleep -Milliseconds 250
+    }
+    Assert-True ($result.ExitCode -eq 0 -and -not (Test-Path $cleanupBundle) -and -not (Test-Path $cleanupArchive)) "Installer self-cleanup failed: $($result.Output)"
+    Write-Host 'PASS: installer ZIP and extracted-directory cleanup'
 
     $rsa.Dispose()
     Write-Host 'All Windows installer checks passed.'

@@ -287,9 +287,68 @@ function Set-UserEnvironment {
     Send-EnvironmentChanged
 }
 
+function Start-InstallerCleanup {
+    $expectedName = 'PythonCWMS-Installer'
+    $installerDirectory = New-Object System.IO.DirectoryInfo ([System.IO.Path]::GetFullPath($PSScriptRoot))
+    if ($installerDirectory.Name -ine $expectedName) { return }
+
+    foreach ($requiredFile in @('Install-PythonCWMS.cmd', 'Install-PythonCWMS.ps1')) {
+        if (-not [System.IO.File]::Exists((Join-Path $installerDirectory.FullName $requiredFile))) { return }
+    }
+
+    $cleanupDirectory = $installerDirectory.FullName
+    $archivePath = Join-Path $installerDirectory.Parent.FullName "$expectedName.zip"
+
+    # Windows Explorer may extract an archive that already contains a top-level
+    # folder into another folder with the same name. Remove that empty wrapper too.
+    $outerDirectory = $installerDirectory.Parent
+    if (-not [System.IO.File]::Exists($archivePath) -and
+        $outerDirectory.Name -ieq $expectedName -and $null -ne $outerDirectory.Parent) {
+        $outerArchive = Join-Path $outerDirectory.Parent.FullName "$expectedName.zip"
+        if ([System.IO.File]::Exists($outerArchive)) {
+            $archivePath = $outerArchive
+            $outerChildren = @($outerDirectory.GetFileSystemInfos())
+            if ($outerChildren.Count -eq 1 -and $outerChildren[0].FullName -ieq $installerDirectory.FullName) {
+                $cleanupDirectory = $outerDirectory.FullName
+            }
+        }
+    }
+    if (-not [System.IO.File]::Exists($archivePath)) { return }
+
+    $escapedDirectory = $cleanupDirectory.Replace("'", "''")
+    $escapedArchive = $archivePath.Replace("'", "''")
+    $cleanupScript = @"
+`$directory = '$escapedDirectory'
+`$archive = '$escapedArchive'
+for (`$attempt = 0; `$attempt -lt 20; `$attempt++) {
+    Start-Sleep -Milliseconds 500
+    try {
+        if ([System.IO.Directory]::Exists(`$directory)) {
+            [System.IO.Directory]::Delete(`$directory, `$true)
+        }
+        if (-not [System.IO.Directory]::Exists(`$directory)) { break }
+    }
+    catch { }
+}
+try {
+    if ([System.IO.File]::Exists(`$archive)) { [System.IO.File]::Delete(`$archive) }
+}
+catch { }
+"@
+    $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cleanupScript))
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = Join-Path $PSHOME 'powershell.exe'
+    $startInfo.Arguments = "-NoLogo -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedCommand"
+    $startInfo.WorkingDirectory = [System.IO.Path]::GetTempPath()
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    [void][System.Diagnostics.Process]::Start($startInfo)
+}
+
 $workRoot = $null
 $backupPath = $null
 $installedTargetCreated = $false
+$installationCompleted = $false
 $environmentStarted = $false
 $oldHome = $null
 $oldPath = $null
@@ -445,6 +504,7 @@ try {
     if ($null -ne $backupPath) { Write-Host "Previous installation retained at: $backupPath" }
     Write-Host "PYTHON_CWMS_HOME was set to: $(Join-Path $InstallRoot 'python')"
     Write-Host "Close all terminal windows, then open a new one before using pythonCWMS."
+    $installationCompleted = $true
     $exitCode = 0
 }
 catch {
@@ -475,6 +535,11 @@ finally {
         try { [System.IO.Directory]::Delete($workRoot, $true) }
         catch { Write-Warning "Could not clean installer temporary directory '$workRoot': $($_.Exception.Message)" }
     }
+}
+
+if ($installationCompleted) {
+    try { Start-InstallerCleanup }
+    catch { Write-Warning "Could not schedule installer cleanup: $($_.Exception.Message)" }
 }
 
 exit $exitCode
