@@ -68,6 +68,6 @@ Packages included in releases are defined by [base requirements](requirements/ba
 
 Jython is still used as a launcher inside RTS and HEC-DSS. Edit `python_script_path` and `args` in [example_python_script_launcher.py](jython_scripts/example_python_script_launcher.py). Set `args` to `None` or an empty string when no arguments are needed; multiple arguments are split before launching CPython.
 
-The former Jython installer now only shows migration instructions and may open the releases page. It never downloads, installs, deletes, or modifies files. Saved copies of the old installer are also stopped by the retirement document at the root of `main`.
+Do not use the former Jython `install_python.py` workflow to install Python CWMS. The file remains as a compatibility notice for old bookmarks, while the signed Windows installer is documented in the [Jython migration guide](jython_scripts/README.md). Saved copies of the old installer are also stopped by the retirement document at the root of `main`.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for release maintenance.
