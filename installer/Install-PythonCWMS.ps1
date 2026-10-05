@@ -326,12 +326,8 @@ try {
 
     Write-Host "Inspecting and extracting the archive..."
     Expand-SafeZip $archivePath $stagingDirectory
-    $pythonExe = Join-Path $stagingDirectory "python\python.exe"
-    if (-not [System.IO.File]::Exists($pythonExe)) { throw "Archive is missing python\python.exe." }
-
-    Write-Host "Running the staged Python startup test..."
-    & $pythonExe -c "import sys; print(sys.version)"
-    if ($LASTEXITCODE -ne 0) { throw "The staged Python startup test failed with exit code $LASTEXITCODE." }
+    $stagedPythonExe = Join-Path $stagingDirectory "python\python.exe"
+    if (-not [System.IO.File]::Exists($stagedPythonExe)) { throw "Archive is missing python\python.exe." }
 
     if ([System.IO.Directory]::Exists($InstallRoot)) {
         $backupPath = "$InstallRoot.backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
@@ -342,8 +338,18 @@ try {
         [System.IO.Directory]::Move($InstallRoot, $backupPath)
     }
 
-    [System.IO.Directory]::Move($stagingDirectory, $InstallRoot)
+    # Copy out of staging instead of renaming it. Endpoint protection can briefly
+    # hold newly extracted executables open and deny a directory rename.
+    [System.IO.Directory]::CreateDirectory($InstallRoot) | Out-Null
     $installedTargetCreated = $true
+    foreach ($item in Get-ChildItem -LiteralPath $stagingDirectory -Force) {
+        Copy-Item -LiteralPath $item.FullName -Destination $InstallRoot -Recurse -Force
+    }
+
+    $pythonExe = Join-Path $InstallRoot "python\python.exe"
+    Write-Host "Running the installed Python startup test..."
+    & $pythonExe -c "import sys; print(sys.version)"
+    if ($LASTEXITCODE -ne 0) { throw "The installed Python startup test failed with exit code $LASTEXITCODE." }
 
     $target = [System.EnvironmentVariableTarget]::User
     $oldHome = [System.Environment]::GetEnvironmentVariable("PYTHON_CWMS_HOME", $target)
