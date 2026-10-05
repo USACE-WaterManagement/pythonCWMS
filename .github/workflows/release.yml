@@ -15,10 +15,10 @@ permissions:
   contents: write
 
 env:
-  WINPYTHON_VERSION: "WinPython 3.13.11.0dot"
-  WINPYTHON_FILENAME: "WinPython64-3.13.11.0dot_post1.zip"
-  WINPYTHON_DOWNLOAD_URL: "https://github.com/winpython/winpython/releases/download/17.2.20251222post1/WinPython64-3.13.11.0dot_post1.zip"
-  WINPYTHON_SHA256: "b88c52ccf412161e27c839b0a3802e80d6ca9f036f25f22687a57dc0bbe3858a"
+  WINPYTHON_VERSION: "WinPython 3.13.15.0dot"
+  WINPYTHON_FILENAME: "WinPython64-3.13.15.0dot.zip"
+  WINPYTHON_DOWNLOAD_URL: "https://github.com/winpython/winpython/releases/download/17.12.20260522/WinPython/WinPython64-3.13.15.0dot.zip"
+  WINPYTHON_SHA256: "28e36408f0140c50b207ea059a599c664564e68a3cbb835f03a71f4601efd8f1"
   UV_VERSION: "0.12.22"
 
 jobs:
@@ -90,8 +90,9 @@ jobs:
       - name: Extract WinPython and install locked packages
         shell: pwsh
         run: |
-          Expand-Archive '${{ env.WINPYTHON_FILENAME }}' -DestinationPath winpython_extracted
-          $winpythonDir = Get-ChildItem winpython_extracted -Directory | Select-Object -First 1
+          $extractRoot = Join-Path $env:RUNNER_TEMP 'wp'
+          Expand-Archive '${{ env.WINPYTHON_FILENAME }}' -DestinationPath $extractRoot
+          $winpythonDir = Get-ChildItem $extractRoot -Directory | Select-Object -First 1
           if ($null -eq $winpythonDir) { throw 'WinPython archive did not contain a directory.' }
           $python = Join-Path $winpythonDir.FullName 'python\python.exe'
           if (-not (Test-Path $python -PathType Leaf)) { throw "Python executable not found at $python" }
@@ -138,7 +139,8 @@ jobs:
             ForEach-Object {
               $content = [IO.File]::ReadAllText($_.FullName)
               if ($content.StartsWith('#!') -and
-                  $content.IndexOf($env:GITHUB_WORKSPACE, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                  ($content.IndexOf($env:GITHUB_WORKSPACE, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+                   $content.IndexOf($env:RUNNER_TEMP, [StringComparison]::OrdinalIgnoreCase) -ge 0)) {
                 $content = [regex]::Replace($content, '\A#![^\r\n]*', '#!/usr/bin/env python')
                 [IO.File]::WriteAllText($_.FullName, $content, [Text.UTF8Encoding]::new($false))
               }
@@ -151,7 +153,9 @@ jobs:
       - name: Relocate and smoke test portable environment
         shell: pwsh
         run: |
-          $relocated = Join-Path $env:RUNNER_TEMP ("pythonCWMS-relocated-" + [guid]::NewGuid().ToString('N'))
+          $relocated = 'C:\hec\python\pythonCWMS'
+          if (Test-Path $relocated) { throw "Relocation test target already exists: $relocated" }
+          New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($relocated)) -Force | Out-Null
           Move-Item '${{ env.FINAL_DIR }}' $relocated
           $pythonDir = Join-Path $relocated 'python'
           $python = Join-Path $pythonDir 'python.exe'
@@ -161,22 +165,34 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Relocated Python import smoke test failed.' }
           & cmd.exe /d /c "`"$(Join-Path $pythonDir 'pythonCWMS.bat')`" --version"
           if ($LASTEXITCODE -ne 0) { throw 'pythonCWMS --version failed after relocation.' }
-          & $python -c "import os,sys; p=os.environ.get('GITHUB_WORKSPACE','').lower(); assert not p or all(p not in x.lower() for x in sys.path), sys.path"
-          if ($LASTEXITCODE -ne 0) { throw 'Relocated Python retained a GitHub runner path in sys.path.' }
+          & (Join-Path $pythonDir 'Scripts\pip.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw 'pip launcher failed after relocation.' }
+          & (Join-Path $pythonDir 'Scripts\jupyter.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw 'Jupyter launcher failed after relocation.' }
+
+          $env:PYTHONCWMS_BUILD_PATHS = @(
+            $env:GITHUB_WORKSPACE, $env:RUNNER_TEMP, $env:WINPYTHON_DIR, $env:FINAL_DIR
+          ) -join [IO.Path]::PathSeparator
+          & $python -c "import os,sys; p=[x.lower() for x in os.environ['PYTHONCWMS_BUILD_PATHS'].split(os.pathsep) if x]; assert all(all(x not in entry.lower() for entry in sys.path) for x in p), sys.path"
+          if ($LASTEXITCODE -ne 0) { throw 'Relocated Python retained a build path in sys.path.' }
 
           $pathScan = @'
           import os, pathlib, sys
-          workspace = os.environ["GITHUB_WORKSPACE"]
-          needles = {workspace.lower().encode(), workspace.replace("\\", "/").lower().encode()}
+          paths = [p for p in os.environ["PYTHONCWMS_BUILD_PATHS"].split(os.pathsep) if p]
+          needles = {
+              variant.lower().encode()
+              for path in paths
+              for variant in (path, path.replace("\\", "/"))
+          }
           bad = []
           for file in pathlib.Path(sys.argv[1]).rglob("*"):
               if file.is_file() and any(needle in file.read_bytes().lower() for needle in needles):
                   bad.append(str(file))
           if bad:
-              raise SystemExit("GitHub runner paths remain in: " + ", ".join(bad))
+              raise SystemExit("Build paths remain in: " + ", ".join(bad))
           '@
           & $python -c $pathScan $relocated
-          if ($LASTEXITCODE -ne 0) { throw 'Portable files contain an embedded GitHub runner path.' }
+          if ($LASTEXITCODE -ne 0) { throw 'Portable files contain an embedded build path.' }
           "PORTABLE_DIR=$relocated" >> $env:GITHUB_ENV
 
       - name: Create ZIP archive
@@ -272,7 +288,7 @@ jobs:
             2. Extract it.
             3. Double-click `Install-PythonCWMS.cmd`.
 
-            The default location is `%LOCALAPPDATA%\Programs\pythonCWMS`. Existing installations are never deleted. For an upgrade, run the PowerShell installer with `-Force`; the previous exact target is retained as a timestamped backup.
+            The default location is `C:\hec\python\pythonCWMS`. If it already exists, the installer asks before replacing it, defaults to Yes, and retains the previous installation as a timestamped backup. Use `-Force` to approve replacement non-interactively.
 
             Release v1.11 cannot be used by the new installer because it has no detached signature asset. Do not modify the historical v1.11 release.
 

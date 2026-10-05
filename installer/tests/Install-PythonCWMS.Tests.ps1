@@ -87,7 +87,7 @@ function Write-TestConfig {
 }
 
 function Invoke-InstallerTest {
-    param([string]$Config, [string]$Target, [switch]$Force)
+    param([string]$Config, [string]$Target, [switch]$Force, [string]$PromptResponse)
     $arguments = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $Installer,
         '-InstallRoot', $Target, '-ConfigFile', $Config, '-PublicKeyFile', $script:PublicKeyPath)
     if ($Force) { $arguments += '-Force' }
@@ -98,7 +98,12 @@ function Invoke-InstallerTest {
     $previousErrorActionPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'
-        $output = & powershell.exe @arguments 2>&1 | Out-String
+        if ($PSBoundParameters.ContainsKey('PromptResponse')) {
+            $output = $PromptResponse | & powershell.exe @arguments 2>&1 | Out-String
+        }
+        else {
+            $output = & powershell.exe @arguments 2>&1 | Out-String
+        }
         $exitCode = $LASTEXITCODE
     }
     finally {
@@ -162,9 +167,25 @@ try {
     $existingTarget = Join-Path $TestRoot 'existing-target'
     [IO.Directory]::CreateDirectory($existingTarget) | Out-Null
     [IO.File]::WriteAllText((Join-Path $existingTarget 'marker.txt'), 'preserve')
-    $result = Invoke-InstallerTest $config $existingTarget
-    Assert-True ($result.ExitCode -ne 0 -and (Test-Path (Join-Path $existingTarget 'marker.txt'))) 'Existing directory was not protected.'
-    Write-Host 'PASS: existing-directory protection'
+    $result = Invoke-InstallerTest $config $existingTarget -PromptResponse 'N'
+    Assert-True ($result.ExitCode -eq 0 -and
+        (Test-Path (Join-Path $existingTarget 'marker.txt')) -and
+        $result.Output -match 'Installation cancelled') 'Declining replacement did not preserve the existing directory.'
+    Write-Host 'PASS: existing-directory replacement declined'
+
+    $promptTarget = Join-Path $TestRoot 'prompt-target'
+    [IO.Directory]::CreateDirectory($promptTarget) | Out-Null
+    [IO.File]::WriteAllText((Join-Path $promptTarget 'marker.txt'), 'preserve')
+    $result = Invoke-InstallerTest $config $promptTarget -PromptResponse ''
+    $promptBackup = @(Get-ChildItem $TestRoot -Directory -Filter 'prompt-target.backup-*')
+    Assert-True ($result.ExitCode -eq 0 -and
+        (Test-Path (Join-Path $promptTarget 'python\python.exe')) -and
+        $promptBackup.Count -eq 1 -and
+        (Test-Path (Join-Path $promptBackup[0].FullName 'marker.txt'))) "Confirmed fixture replacement failed: $($result.Output)"
+    Write-Host 'PASS: existing-directory replacement defaults to yes'
+
+    [Environment]::SetEnvironmentVariable('PYTHON_CWMS_HOME', $OldHome, $EnvironmentTarget)
+    [Environment]::SetEnvironmentVariable('Path', $OldPath, $EnvironmentTarget)
 
     $legacyHome = Join-Path $TestRoot 'legacy\pythonCWMS\python'
     $pathBeforeMigration = [Environment]::GetEnvironmentVariable('Path', $EnvironmentTarget)

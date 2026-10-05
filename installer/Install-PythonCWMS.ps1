@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA "Programs\pythonCWMS"),
+    [string]$InstallRoot = "C:\hec\python\pythonCWMS",
     [switch]$Force,
 
     # These two inputs are used only by the repository's isolated fixture tests.
@@ -302,14 +302,34 @@ try {
     if ([string]::IsNullOrWhiteSpace([System.IO.Path]::GetFileName($trimmedRoot))) {
         throw "InstallRoot must name a directory, not a drive root."
     }
+    if ($InstallRoot.Length -gt 37) {
+        Write-Warning "The WinPython base directory is $($InstallRoot.Length) characters long. WinPython recommends about 37 characters or fewer; choose a shorter -InstallRoot if possible."
+    }
 
     $installParent = [System.IO.Path]::GetDirectoryName($InstallRoot)
     [System.IO.Directory]::CreateDirectory($installParent) | Out-Null
 
+    if ([System.IO.File]::Exists($InstallRoot)) { throw "Install target is an existing file: $InstallRoot" }
+    if ([System.IO.Directory]::Exists($InstallRoot) -and -not $Force) {
+        Write-Host "An installation already exists at: $InstallRoot"
+        while ($true) {
+            $answer = [string](Read-Host "Replace it? The existing installation will be retained as a timestamped backup [Y/n]")
+            if ([string]::IsNullOrWhiteSpace($answer) -or $answer -match '^(?i:y|yes)$') { break }
+            if ($answer -match '^(?i:n|no)$') {
+                Write-Host "Installation cancelled. The existing installation was not changed."
+                $exitCode = 0
+                return
+            }
+            Write-Host "Enter Y or N. Press Enter to accept the default (Y)."
+        }
+    }
+
     [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
-    $workRoot = Join-Path $installParent (".PythonCWMS-Installer-" + [System.Guid]::NewGuid().ToString('N'))
-    $downloadDirectory = Join-Path $workRoot "downloads"
-    $stagingDirectory = Join-Path $workRoot "staging"
+    do {
+        $workRoot = Join-Path $installParent (".pcw-" + [System.Guid]::NewGuid().ToString('N').Substring(0, 8))
+    } while ([System.IO.Directory]::Exists($workRoot) -or [System.IO.File]::Exists($workRoot))
+    $downloadDirectory = Join-Path $workRoot "d"
+    $stagingDirectory = Join-Path $workRoot "s"
     [System.IO.Directory]::CreateDirectory($downloadDirectory) | Out-Null
     [System.IO.Directory]::CreateDirectory($stagingDirectory) | Out-Null
 
@@ -351,11 +371,6 @@ try {
             throw "Configuration download filenames do not match archive_filename."
         }
     }
-
-    if ([System.IO.Directory]::Exists($InstallRoot) -and -not $Force) {
-        throw "Install target already exists: $InstallRoot. Re-run with -Force to create a backup and replace it."
-    }
-    if ([System.IO.File]::Exists($InstallRoot)) { throw "Install target is an existing file: $InstallRoot" }
 
     $archivePath = Join-Path $downloadDirectory $archiveFilename
     $signaturePath = "$archivePath.sig"

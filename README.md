@@ -16,8 +16,10 @@ The installer downloads the signed portable environment, verifies its SHA-256 ha
 The default installation directory is:
 
 ```text
-%LOCALAPPDATA%\Programs\pythonCWMS
+C:\hec\python\pythonCWMS
 ```
+
+WinPython recommends keeping its base directory path to about 37 characters or fewer. The installer warns when a custom `-InstallRoot` exceeds that recommendation.
 
 To select another directory, open Command Prompt in the extracted installer directory and run:
 
@@ -27,13 +29,13 @@ Install-PythonCWMS.cmd -InstallRoot "D:\Tools\pythonCWMS"
 
 ### Upgrade and backups
 
-The installer stops if the target directory already exists. To upgrade the same target, use `-Force`:
+If the target directory already exists, the installer asks whether to replace it and defaults to **Yes**. The existing installation is retained as a timestamped backup. For an unattended upgrade, use `-Force` to approve replacement without prompting:
 
 ```bat
 Install-PythonCWMS.cmd -Force
 ```
 
-Before installing, `-Force` renames the exact existing target to a timestamped sibling such as `pythonCWMS.backup-20261005-143000`. If installation fails, it restores that backup. After a successful installation the backup is retained and must be removed manually when no longer needed.
+After confirmation (or `-Force`), the installer renames the exact existing target to a timestamped sibling such as `pythonCWMS.backup-20261005-143000`. If installation fails, it restores that backup. After a successful installation the backup is retained and must be removed manually when no longer needed.
 
 ### Environment variables
 
