@@ -243,8 +243,10 @@ jobs:
 
           Compress-Archive -Path installer/Install-PythonCWMS.cmd, installer/Install-PythonCWMS.ps1 `
             -DestinationPath (Join-Path $assetRoot 'PythonCWMS-Installer.zip')
-          "RELEASE_CONFIG=$(Join-Path $assetRoot 'pythonCWMS_config.json')" >> $env:GITHUB_ENV
-          "INSTALLER_BUNDLE=$(Join-Path $assetRoot 'PythonCWMS-Installer.zip')" >> $env:GITHUB_ENV
+          $releaseConfig = (Join-Path $assetRoot 'pythonCWMS_config.json').Replace('\', '/')
+          $installerBundle = (Join-Path $assetRoot 'PythonCWMS-Installer.zip').Replace('\', '/')
+          "RELEASE_CONFIG=$releaseConfig" >> $env:GITHUB_ENV
+          "INSTALLER_BUNDLE=$installerBundle" >> $env:GITHUB_ENV
 
       - name: Publish release
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
@@ -253,6 +255,7 @@ jobs:
           name: Python CWMS ${{ env.VERSION }}
           draft: false
           prerelease: false
+          fail_on_unmatched_files: true
           files: |
             ${{ env.ARCHIVE_NAME }}
             ${{ env.SIGNATURE_NAME }}
