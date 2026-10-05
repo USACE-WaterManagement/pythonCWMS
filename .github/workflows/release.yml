@@ -160,6 +160,8 @@ jobs:
           $pythonDir = Join-Path $relocated 'python'
           $python = Join-Path $pythonDir 'python.exe'
           $env:PYTHONDONTWRITEBYTECODE = '1'
+          $env:PYTHON_CWMS_HOME = $pythonDir
+          $env:PATH = "$pythonDir;$(Join-Path $pythonDir 'Scripts');$env:PATH"
 
           & $python -c "import sys; import cwms, hecdss, pandas, requests; print(sys.executable)"
           if ($LASTEXITCODE -ne 0) { throw 'Relocated Python import smoke test failed.' }
