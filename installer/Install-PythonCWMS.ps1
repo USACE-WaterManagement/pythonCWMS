@@ -41,7 +41,16 @@ function Get-HttpsFile {
         $uri.Scheme -ne [System.Uri]::UriSchemeHttps) {
         throw "Download URL must be an absolute HTTPS URL: $Source"
     }
-    Invoke-WebRequest -UseBasicParsing -Uri $uri -OutFile $Destination
+    # Windows PowerShell 5.1's progress rendering can make large downloads
+    # dramatically slower. Suppressing it does not change TLS validation.
+    $previousProgressPreference = $ProgressPreference
+    try {
+        $ProgressPreference = "SilentlyContinue"
+        Invoke-WebRequest -UseBasicParsing -Uri $uri -OutFile $Destination
+    }
+    finally {
+        $ProgressPreference = $previousProgressPreference
+    }
 }
 
 function Assert-DownloadSource {
@@ -307,9 +316,15 @@ try {
     $archivePath = Join-Path $downloadDirectory $archiveFilename
     $signaturePath = "$archivePath.sig"
     Write-Host "Downloading Python CWMS $($config.version)..."
+    $downloadTimer = [System.Diagnostics.Stopwatch]::StartNew()
     Get-HttpsFile ([string]$config.python_download_url) $archivePath $localFixture
     Get-HttpsFile ([string]$config.python_signature_url) $signaturePath $localFixture
+    $downloadTimer.Stop()
+    $archiveSizeMiB = (Get-Item -LiteralPath $archivePath).Length / 1MB
+    Write-Host ("Downloaded {0:N1} MiB in {1:N1} seconds." -f $archiveSizeMiB, $downloadTimer.Elapsed.TotalSeconds)
 
+    Write-Host "Verifying archive hash and signature..."
+    $verificationTimer = [System.Diagnostics.Stopwatch]::StartNew()
     $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash
     if ($actualHash -ne [string]$config.python_expected_hash_sha256) {
         throw "SHA-256 hash mismatch. The downloaded archive will not be installed."
@@ -323,9 +338,14 @@ try {
     if (-not (Test-ArchiveSignature $archivePath $signaturePath $publicKeyPem $actualHash)) {
         throw "RSA signature verification failed. The archive will not be installed."
     }
+    $verificationTimer.Stop()
+    Write-Host ("Archive verified in {0:N1} seconds." -f $verificationTimer.Elapsed.TotalSeconds)
 
     Write-Host "Inspecting and extracting the archive..."
+    $extractionTimer = [System.Diagnostics.Stopwatch]::StartNew()
     Expand-SafeZip $archivePath $stagingDirectory
+    $extractionTimer.Stop()
+    Write-Host ("Archive extracted in {0:N1} seconds." -f $extractionTimer.Elapsed.TotalSeconds)
     $stagedPythonExe = Join-Path $stagingDirectory "python\python.exe"
     if (-not [System.IO.File]::Exists($stagedPythonExe)) { throw "Archive is missing python\python.exe." }
 
@@ -340,11 +360,15 @@ try {
 
     # Copy out of staging instead of renaming it. Endpoint protection can briefly
     # hold newly extracted executables open and deny a directory rename.
+    Write-Host "Installing Python CWMS..."
+    $installationTimer = [System.Diagnostics.Stopwatch]::StartNew()
     [System.IO.Directory]::CreateDirectory($InstallRoot) | Out-Null
     $installedTargetCreated = $true
     foreach ($item in Get-ChildItem -LiteralPath $stagingDirectory -Force) {
         Copy-Item -LiteralPath $item.FullName -Destination $InstallRoot -Recurse -Force
     }
+    $installationTimer.Stop()
+    Write-Host ("Files installed in {0:N1} seconds." -f $installationTimer.Elapsed.TotalSeconds)
 
     $pythonExe = Join-Path $InstallRoot "python\python.exe"
     Write-Host "Running the installed Python startup test..."
