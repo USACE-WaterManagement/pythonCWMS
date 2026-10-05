@@ -96,7 +96,7 @@ jobs:
           $python = Join-Path $winpythonDir.FullName 'python\python.exe'
           if (-not (Test-Path $python -PathType Leaf)) { throw "Python executable not found at $python" }
 
-          & $python -m pip install --require-hashes --only-binary=:all: -r requirements/locked.txt
+          & $python -m pip install --no-compile --require-hashes --only-binary=:all: -r requirements/locked.txt
           if ($LASTEXITCODE -ne 0) { throw 'Locked package installation failed.' }
           & $python -m pip check
           if ($LASTEXITCODE -ne 0) { throw 'Installed packages have incompatible dependencies.' }
@@ -125,6 +125,25 @@ jobs:
           Copy-Item README.md, LICENSE $finalDir
           Copy-Item requirements, jython_scripts $finalDir -Recurse
 
+          # Bytecode records the build-time source path and is regenerated on demand.
+          Get-ChildItem $finalDir -Directory -Filter __pycache__ -Recurse |
+            Remove-Item -Recurse -Force
+          Get-ChildItem $finalDir -File -Include *.pyc,*.pyo -Recurse |
+            Remove-Item -Force
+
+          # Normalize pip-generated text launchers that contain the build-time interpreter path.
+          $scriptsDir = Join-Path $finalDir 'python\Scripts'
+          Get-ChildItem $scriptsDir -File |
+            Where-Object { $_.Extension -eq '.py' -or $_.Extension -eq '' } |
+            ForEach-Object {
+              $content = [IO.File]::ReadAllText($_.FullName)
+              if ($content.StartsWith('#!') -and
+                  $content.IndexOf($env:GITHUB_WORKSPACE, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                $content = [regex]::Replace($content, '\A#![^\r\n]*', '#!/usr/bin/env python')
+                [IO.File]::WriteAllText($_.FullName, $content, [Text.UTF8Encoding]::new($false))
+              }
+            }
+
           $launcher = Join-Path $finalDir 'python\pythonCWMS.bat'
           '@"%~dp0python.exe" %*' | Out-File $launcher -Encoding ascii
           "FINAL_DIR=$finalDir" >> $env:GITHUB_ENV
@@ -136,6 +155,7 @@ jobs:
           Move-Item '${{ env.FINAL_DIR }}' $relocated
           $pythonDir = Join-Path $relocated 'python'
           $python = Join-Path $pythonDir 'python.exe'
+          $env:PYTHONDONTWRITEBYTECODE = '1'
 
           & $python -c "import sys; import cwms, hecdss, pandas, requests; print(sys.executable)"
           if ($LASTEXITCODE -ne 0) { throw 'Relocated Python import smoke test failed.' }
