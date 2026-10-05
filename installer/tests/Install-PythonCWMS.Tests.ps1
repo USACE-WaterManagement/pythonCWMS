@@ -91,8 +91,21 @@ function Invoke-InstallerTest {
     $arguments = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $Installer,
         '-InstallRoot', $Target, '-ConfigFile', $Config, '-PublicKeyFile', $script:PublicKeyPath)
     if ($Force) { $arguments += '-Force' }
-    $output = & powershell.exe @arguments 2>&1 | Out-String
-    return @{ ExitCode = $LASTEXITCODE; Output = $output }
+
+    # PowerShell 5.1 turns a native process's stderr into error records. Several
+    # tests intentionally make the installer fail, so capture those records
+    # without allowing the script-wide Stop preference to abort the test run.
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = & powershell.exe @arguments 2>&1 | Out-String
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    return @{ ExitCode = $exitCode; Output = $output }
 }
 
 try {
