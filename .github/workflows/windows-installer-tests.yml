@@ -1,0 +1,30 @@
+name: Windows installer checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Run installer tests in Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          & .\installer\tests\Install-PythonCWMS.Tests.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Parse installer in PowerShell 7
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path installer/Install-PythonCWMS.ps1), [ref]$tokens, [ref]$errors)
+          if ($errors.Count) { throw ($errors -join "`n") }

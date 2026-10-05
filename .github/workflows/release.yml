@@ -7,453 +7,253 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version number'
+        description: 'Version number (the first installer release must be 2.0)'
         required: true
-        default: '0.81'
+        default: '2.0'
 
-# Permissions for creating releases (least privilege: contents:write is needed to
-# push the config commit and publish the release; packages:write was unused).
 permissions:
   contents: write
-  actions: read
 
 env:
-  # WinPython Configuration - Update these variables as needed
   WINPYTHON_VERSION: "WinPython 3.13.11.0dot"
-  WINPYTHON_FILENAME: "WinPython64-3.13.11.0dot_post1.zip"  # ← removed trailing space
+  WINPYTHON_FILENAME: "WinPython64-3.13.11.0dot_post1.zip"
   WINPYTHON_DOWNLOAD_URL: "https://github.com/winpython/winpython/releases/download/17.2.20251222post1/WinPython64-3.13.11.0dot_post1.zip"
-  # Known-good SHA256 of WINPYTHON_FILENAME. The build fails if the download does
-  # not match. MUST be updated whenever WINPYTHON_DOWNLOAD_URL changes — confirm
-  # the value against the upstream WinPython release page before trusting it.
   WINPYTHON_SHA256: "b88c52ccf412161e27c839b0a3802e80d6ca9f036f25f22687a57dc0bbe3858a"
+  UV_VERSION: "0.12.22"
 
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-    - name: Download WinPython
-      run: |
-        $url = "${{ env.WINPYTHON_DOWNLOAD_URL }}"
-        $filename = "${{ env.WINPYTHON_FILENAME }}"
-
-        Write-Host "Downloading WinPython from: $url"
-        Write-Host "Saving as: $filename"
-
-        Invoke-WebRequest -Uri $url -OutFile $filename
-
-        if (Test-Path $filename) {
-          $size = (Get-Item $filename).Length / 1MB
-          Write-Host "✓ Downloaded successfully - Size: $([math]::Round($size, 2)) MB"
-        } else {
-          Write-Error "❌ Failed to download $filename"
-          exit 1
-        }
-
-    - name: Verify WinPython hash
-      run: |
-        $filename = "${{ env.WINPYTHON_FILENAME }}"
-        $expected = "${{ env.WINPYTHON_SHA256 }}".Trim()
-
-        if ([string]::IsNullOrWhiteSpace($expected)) {
-          Write-Error "❌ WINPYTHON_SHA256 is not set. Refusing to build from an unverified download."
-          exit 1
-        }
-
-        $actual = (Get-FileHash -Path $filename -Algorithm SHA256).Hash
-        Write-Host "Expected SHA256: $expected"
-        Write-Host "Actual   SHA256: $actual"
-
-        if ($actual.ToLower() -ne $expected.ToLower()) {
-          Write-Error "❌ WinPython hash mismatch. Download is corrupted or tampered with."
-          exit 1
-        }
-        Write-Host "✓ WinPython hash verified"
-
-    - name: Extract WinPython
-      run: |
-        $filename = "${{ env.WINPYTHON_FILENAME }}"
-        Write-Host "Extracting $filename..."
-
-        Expand-Archive -Path $filename -DestinationPath "winpython_extracted"
-
-        $extractedDirs = Get-ChildItem -Path "winpython_extracted" -Directory
-        Write-Host "Extracted directories:"
-        $extractedDirs | ForEach-Object { Write-Host "  - $($_.Name)" }
-
-    - name: Install packages from requirements
-      run: |
-        $winpythonDir = Get-ChildItem -Path "winpython_extracted" -Directory | Select-Object -First 1
-        Write-Host "Using WinPython directory: $($winpythonDir.Name)"
-
-        $pythonDirPath = Join-Path $winpythonDir.FullName "python"
-        $pipPath = Join-Path $pythonDirPath "Scripts\pip.exe"
-        $pythonPath = Join-Path $pythonDirPath "python.exe"
-
-        Write-Host "Python directory path: $pythonDirPath"
-        Write-Host "Looking for pip at: $pipPath"
-        Write-Host "Looking for python at: $pythonPath"
-
-        # Verify directories and files exist
-        if (-not (Test-Path $pythonDirPath)) {
-          Write-Error "Python directory not found at: $pythonDirPath"
-          Write-Host "Available directories in WinPython:"
-          Get-ChildItem -Path $winpythonDir.FullName -Directory | ForEach-Object { Write-Host "  $($_.Name)" }
-          exit 1
-        }
-
-        if (-not (Test-Path $pythonPath)) {
-          Write-Error "Python executable not found at: $pythonPath"
-          exit 1
-        }
-
-        if (-not (Test-Path $pipPath)) {
-          Write-Error "Pip not found at: $pipPath"
-          Write-Host "Contents of Scripts directory:"
-          $scriptsDir = Join-Path $pythonDirPath "Scripts"
-          if (Test-Path $scriptsDir) {
-            Get-ChildItem -Path $scriptsDir | ForEach-Object { Write-Host "  $($_.Name)" }
+      - name: Set release version
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
+            '${{ github.event.inputs.version }}' -replace '^v', ''
+          } else {
+            '${{ github.ref_name }}' -replace '^v', ''
           }
-          exit 1
-        }
+          if ($version -notmatch '^\d+\.\d+(\.\d+)?$') {
+            throw "Invalid release version: $version"
+          }
+          if ([version]$version -lt [version]'2.0') {
+            throw 'The installer migration is a breaking change; the next release is v2.0, not a v1.x release.'
+          }
+          "VERSION=$version" >> $env:GITHUB_ENV
+          "RELEASE_TAG=v$version" >> $env:GITHUB_ENV
+          "ARCHIVE_NAME=pythonCWMS$version.zip" >> $env:GITHUB_ENV
 
-        # Install only reviewed, hash-pinned wheels. Wheels can still contain
-        # executable Python code, so both restrictions are required.
-        $pipSecurityFlags = @("--only-binary=:all:")
+      - name: Verify locked requirements are current
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check "uv==${{ env.UV_VERSION }}"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install the pinned lock generator.' }
 
-        $lockReqs = "requirements\locked.txt"
-        if (-not (Test-Path $lockReqs)) {
-          Write-Error "$lockReqs is required. Regenerate it after changing either input requirements file."
-          exit 1
-        }
+          $generated = Join-Path $env:RUNNER_TEMP 'locked.txt'
+          python -m uv pip compile `
+            --python-platform windows `
+            --python-version 3.13 `
+            --upgrade `
+            --generate-hashes `
+            --only-binary :all: `
+            --output-file $generated `
+            requirements/base_requirements.txt `
+            requirements/supplemental_requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Could not regenerate the Windows CPython 3.13 lock.' }
 
-        Write-Host "Installing from hash-pinned lock $lockReqs..."
-        & $pythonPath -m pip install --require-hashes $pipSecurityFlags -r $lockReqs
-
-        if ($LASTEXITCODE -ne 0) {
-          Write-Error "Locked package installation failed with exit code: $LASTEXITCODE"
-          exit 1
-        }
-        Write-Host "✓ Hash-pinned installation completed successfully"
-
-    - name: Run setup script (if exists)
-      run: |
-        $winpythonDir = Get-ChildItem -Path "winpython_extracted" -Directory | Select-Object -First 1
-
-        $pythonDirPath = Join-Path $winpythonDir.FullName "python"
-        $pythonPath = Join-Path $pythonDirPath "python.exe"
-
-        if (-not (Test-Path $pythonPath)) {
-          Write-Error "Python executable not found at: $pythonPath"
-          exit 1
-        }
-
-        if (Test-Path "setup_environment.py") {
-          Write-Host "Running setup_environment.py..."
-          Write-Host "Using python: $pythonPath"
-
-          & $pythonPath setup_environment.py
-
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Setup script failed with exit code: $LASTEXITCODE"
-            exit 1
+          # Ignore uv's command comment because its output path is intentionally temporary.
+          $committedBody = (Get-Content requirements/locked.txt | Select-Object -Skip 2) -join "`n"
+          $generatedBody = (Get-Content $generated | Select-Object -Skip 2) -join "`n"
+          if ($committedBody -cne $generatedBody) {
+            throw 'requirements/locked.txt is stale. Regenerate it from both input requirement files.'
           }
 
-          Write-Host "✓ Setup script completed successfully"
-        } else {
-          Write-Host "No setup_environment.py found, skipping custom setup"
-        }
+      - name: Run Windows installer checks
+        shell: powershell
+        run: |
+          & .\installer\tests\Install-PythonCWMS.Tests.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    - name: Create final directory structure
-      run: |
-        $winpythonDir = Get-ChildItem -Path "winpython_extracted" -Directory | Select-Object -First 1
-        $version = if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
-          "${{ github.event.inputs.version }}" -replace "^v", ""
-        } else {
-          "${{ github.ref_name }}" -replace "^v", ""
-        }
-        $releaseTag = if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
-          "v$version"
-        } else {
-          "${{ github.ref_name }}"
-        }
-        $finalDir = "pythonCWMS"
-
-        Write-Host "Creating final directory: $finalDir"
-        Write-Host "Source WinPython directory: $($winpythonDir.Name)"
-
-        New-Item -ItemType Directory -Path $finalDir -Force
-        Copy-Item -Path "$($winpythonDir.FullName)\*" -Destination $finalDir -Recurse -Force
-
-        Write-Host "Copying additional repository files..."
-        Get-ChildItem -Path "." -Exclude ".git*", "winpython_extracted", "*.zip", $finalDir |
-          ForEach-Object {
-            Write-Host "  Copying: $($_.Name)"
-            Copy-Item -Path $_.FullName -Destination $finalDir -Recurse -Force
+      - name: Download and verify WinPython
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri '${{ env.WINPYTHON_DOWNLOAD_URL }}' -OutFile '${{ env.WINPYTHON_FILENAME }}'
+          $actual = (Get-FileHash '${{ env.WINPYTHON_FILENAME }}' -Algorithm SHA256).Hash
+          if ($actual -ne '${{ env.WINPYTHON_SHA256 }}') {
+            throw "WinPython SHA-256 mismatch. Expected ${{ env.WINPYTHON_SHA256 }}, got $actual."
           }
 
-        echo "FINAL_DIR=$finalDir" >> $env:GITHUB_ENV
-        echo "VERSION=$version" >> $env:GITHUB_ENV
-        echo "RELEASE_TAG=$releaseTag" >> $env:GITHUB_ENV
+      - name: Extract WinPython and install locked packages
+        shell: pwsh
+        run: |
+          Expand-Archive '${{ env.WINPYTHON_FILENAME }}' -DestinationPath winpython_extracted
+          $winpythonDir = Get-ChildItem winpython_extracted -Directory | Select-Object -First 1
+          if ($null -eq $winpythonDir) { throw 'WinPython archive did not contain a directory.' }
+          $python = Join-Path $winpythonDir.FullName 'python\python.exe'
+          if (-not (Test-Path $python -PathType Leaf)) { throw "Python executable not found at $python" }
 
-        $winpythonSubDir = $winpythonDir.Name
-        echo "WINPYTHON_SUBDIR=$winpythonSubDir" >> $env:GITHUB_ENV
-        Write-Host "WinPython subdirectory: $winpythonSubDir"
+          & $python -m pip install --require-hashes --only-binary=:all: -r requirements/locked.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Locked package installation failed.' }
+          & $python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw 'Installed packages have incompatible dependencies.' }
 
-    - name: Create pythonCWMS.bat launcher
-      run: |
-        $finalDir = "${{ env.FINAL_DIR }}"
-        $pythonDir = Join-Path $finalDir "python"
+          foreach ($requirementsFile in @('requirements/base_requirements.txt', 'requirements/supplemental_requirements.txt')) {
+            foreach ($line in Get-Content $requirementsFile) {
+              if ($line -match '^\s*([A-Za-z0-9_.-]+)==([^\s#]+)') {
+                $name = $Matches[1]
+                $wanted = $Matches[2]
+                $shown = & $python -m pip show $name
+                $installedLine = $shown | Where-Object { $_ -match '^Version:\s*(.+)$' } | Select-Object -First 1
+                if ($null -eq $installedLine -or $installedLine -notmatch '^Version:\s*(.+)$' -or $Matches[1] -ne $wanted) {
+                  throw "$name requested $wanted but the portable environment does not contain that version."
+                }
+              }
+            }
+          }
+          "WINPYTHON_DIR=$($winpythonDir.FullName)" >> $env:GITHUB_ENV
 
-        Write-Host "Creating pythonCWMS.bat in: $pythonDir"
+      - name: Assemble portable environment
+        shell: pwsh
+        run: |
+          $finalDir = Join-Path $env:RUNNER_TEMP 'pythonCWMS-build'
+          New-Item -ItemType Directory -Path $finalDir | Out-Null
+          Copy-Item "${{ env.WINPYTHON_DIR }}\*" $finalDir -Recurse
+          Copy-Item README.md, LICENSE $finalDir
+          Copy-Item requirements, jython_scripts $finalDir -Recurse
 
-        if (-not (Test-Path $pythonDir)) {
-          Write-Error "Python directory not found at: $pythonDir"
-          Write-Host "Contents of final directory:"
-          Get-ChildItem -Path $finalDir | ForEach-Object { Write-Host "  $($_.Name)" }
-          exit 1
-        }
+          $launcher = Join-Path $finalDir 'python\pythonCWMS.bat'
+          '@"%~dp0python.exe" %*' | Out-File $launcher -Encoding ascii
+          "FINAL_DIR=$finalDir" >> $env:GITHUB_ENV
 
-        $batContent = '@"%~dp0python.exe" %*'
-        $batPath = Join-Path $pythonDir "pythonCWMS.bat"
+      - name: Relocate and smoke test portable environment
+        shell: pwsh
+        run: |
+          $relocated = Join-Path $env:RUNNER_TEMP ("pythonCWMS-relocated-" + [guid]::NewGuid().ToString('N'))
+          Move-Item '${{ env.FINAL_DIR }}' $relocated
+          $pythonDir = Join-Path $relocated 'python'
+          $python = Join-Path $pythonDir 'python.exe'
 
-        $batContent | Out-File -FilePath $batPath -Encoding ASCII
+          & $python -c "import sys; import cwms, hecdss, pandas, requests; print(sys.executable)"
+          if ($LASTEXITCODE -ne 0) { throw 'Relocated Python import smoke test failed.' }
+          & cmd.exe /d /c "`"$(Join-Path $pythonDir 'pythonCWMS.bat')`" --version"
+          if ($LASTEXITCODE -ne 0) { throw 'pythonCWMS --version failed after relocation.' }
+          & $python -c "import os,sys; p=os.environ.get('GITHUB_WORKSPACE','').lower(); assert not p or all(p not in x.lower() for x in sys.path), sys.path"
+          if ($LASTEXITCODE -ne 0) { throw 'Relocated Python retained a GitHub runner path in sys.path.' }
 
-        Write-Host "✓ Created pythonCWMS.bat at: $batPath"
+          $pathScan = @'
+          import os, pathlib, sys
+          workspace = os.environ["GITHUB_WORKSPACE"]
+          needles = {workspace.lower().encode(), workspace.replace("\\", "/").lower().encode()}
+          bad = []
+          for file in pathlib.Path(sys.argv[1]).rglob("*"):
+              if file.is_file() and any(needle in file.read_bytes().lower() for needle in needles):
+                  bad.append(str(file))
+          if bad:
+              raise SystemExit("GitHub runner paths remain in: " + ", ".join(bad))
+          '@
+          & $python -c $pathScan $relocated
+          if ($LASTEXITCODE -ne 0) { throw 'Portable files contain an embedded GitHub runner path.' }
+          "PORTABLE_DIR=$relocated" >> $env:GITHUB_ENV
 
-        if (Test-Path $batPath) {
-          Write-Host "✓ Batch file successfully created"
-          Write-Host "File contents:"
-          Get-Content $batPath | ForEach-Object { Write-Host "  $_" }
-        } else {
-          Write-Error "❌ Failed to create batch file"
-          exit 1
-        }
+      - name: Create ZIP archive
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = Join-Path $env:GITHUB_WORKSPACE '${{ env.ARCHIVE_NAME }}'
+          [System.IO.Compression.ZipFile]::CreateFromDirectory(
+            '${{ env.PORTABLE_DIR }}', $archive,
+            [System.IO.Compression.CompressionLevel]::Optimal, $false)
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash
+          "ARCHIVE_HASH=$hash" >> $env:GITHUB_ENV
+          "ARCHIVE_SIZE_MB=$([math]::Round((Get-Item $archive).Length / 1MB, 2))" >> $env:GITHUB_ENV
 
-    - name: Install 7-Zip
-      run: |
-        Write-Host "Installing 7-Zip..."
-        choco install 7zip -y
+      - name: Sign archive and validate release key
+        shell: pwsh
+        env:
+          RELEASE_SIGNING_PRIVATE_KEY: ${{ secrets.RELEASE_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:RELEASE_SIGNING_PRIVATE_KEY)) {
+            throw 'RELEASE_SIGNING_PRIVATE_KEY is required; refusing to publish an unsigned release.'
+          }
+          $archive = '${{ env.ARCHIVE_NAME }}'
+          $signature = "$archive.sig"
+          $rsa = [System.Security.Cryptography.RSA]::Create()
+          try {
+            $rsa.ImportFromPem($env:RELEASE_SIGNING_PRIVATE_KEY)
+            $bytes = [System.IO.File]::ReadAllBytes($archive)
+            $sig = $rsa.SignData($bytes, [Security.Cryptography.HashAlgorithmName]::SHA256, [Security.Cryptography.RSASignaturePadding]::Pkcs1)
+          } finally { $rsa.Dispose() }
+          [System.IO.File]::WriteAllBytes($signature, $sig)
 
-    - name: Create 7z archive
-      run: |
-        $archiveName = "pythonCWMS${{ env.VERSION }}.7z"
-        Write-Host "Creating archive: $archiveName"
-        Write-Host "Compressing directory: ${{ env.FINAL_DIR }}"
+          $installerSource = Get-Content installer/Install-PythonCWMS.ps1 -Raw
+          $keyPattern = '(?s)' + [regex]::Escape('$ReleasePublicKeyPem') + "\s*=\s*@'\s*(?<pem>.*?)\s*'@"
+          $keyMatch = [regex]::Match($installerSource, $keyPattern)
+          if (-not $keyMatch.Success) { throw 'Could not find the embedded release public key in the PowerShell installer.' }
+          $publicRsa = [System.Security.Cryptography.RSA]::Create()
+          try {
+            $publicRsa.ImportFromPem($keyMatch.Groups['pem'].Value)
+            $valid = $publicRsa.VerifyData($bytes, $sig, [Security.Cryptography.HashAlgorithmName]::SHA256, [Security.Cryptography.RSASignaturePadding]::Pkcs1)
+          } finally { $publicRsa.Dispose() }
+          if (-not $valid) { throw 'The signing private key does not match the public key embedded in the installer.' }
+          "SIGNATURE_NAME=$signature" >> $env:GITHUB_ENV
 
-        & "C:\Program Files\7-Zip\7z.exe" a -t7z -mx=9 $archiveName "${{ env.FINAL_DIR }}"
+      - name: Generate release configuration and installer bundle
+        shell: pwsh
+        run: |
+          $assetRoot = Join-Path $env:RUNNER_TEMP 'release-assets'
+          New-Item -ItemType Directory -Path $assetRoot | Out-Null
+          $archiveUrl = "https://github.com/${{ github.repository }}/releases/download/${{ env.RELEASE_TAG }}/${{ env.ARCHIVE_NAME }}"
+          $signatureUrl = "$archiveUrl.sig"
+          $config = [ordered]@{
+            config_version = 2
+            version = '${{ env.VERSION }}'
+            archive_filename = '${{ env.ARCHIVE_NAME }}'
+            python_download_url = $archiveUrl
+            python_expected_hash_sha256 = '${{ env.ARCHIVE_HASH }}'
+            python_signature_url = $signatureUrl
+            archive_size_mb = [double]'${{ env.ARCHIVE_SIZE_MB }}'
+            source_winpython_version = '${{ env.WINPYTHON_VERSION }}'
+            source_winpython_filename = '${{ env.WINPYTHON_FILENAME }}'
+          }
+          $config | ConvertTo-Json | Out-File (Join-Path $assetRoot 'pythonCWMS_config.json') -Encoding utf8
 
-        if (Test-Path $archiveName) {
-          $size = (Get-Item $archiveName).Length / 1MB
-          Write-Host "✓ Archive created successfully - Size: $([math]::Round($size, 2)) MB"
-          echo "ARCHIVE_SIZE_MB=$([math]::Round($size, 2))" >> $env:GITHUB_ENV
-        } else {
-          Write-Error "❌ Failed to create archive"
-          exit 1
-        }
+          Compress-Archive -Path installer/Install-PythonCWMS.cmd, installer/Install-PythonCWMS.ps1 `
+            -DestinationPath (Join-Path $assetRoot 'PythonCWMS-Installer.zip')
+          "RELEASE_CONFIG=$(Join-Path $assetRoot 'pythonCWMS_config.json')" >> $env:GITHUB_ENV
+          "INSTALLER_BUNDLE=$(Join-Path $assetRoot 'PythonCWMS-Installer.zip')" >> $env:GITHUB_ENV
 
-        echo "ARCHIVE_NAME=$archiveName" >> $env:GITHUB_ENV
+      - name: Publish release
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Python CWMS ${{ env.VERSION }}
+          draft: false
+          prerelease: false
+          files: |
+            ${{ env.ARCHIVE_NAME }}
+            ${{ env.SIGNATURE_NAME }}
+            ${{ env.RELEASE_CONFIG }}
+            ${{ env.INSTALLER_BUNDLE }}
+          body: |
+            ## Python CWMS ${{ env.VERSION }}
 
-    - name: Calculate SHA256 hash
-      run: |
-        Write-Host "Calculating SHA256 hash for ${{ env.ARCHIVE_NAME }}..."
-        $hash = Get-FileHash -Path "${{ env.ARCHIVE_NAME }}" -Algorithm SHA256
-        $hashString = $hash.Hash
-        echo "ARCHIVE_HASH=$hashString" >> $env:GITHUB_ENV
-        Write-Host "✓ SHA256: $hashString"
+            This is the v2.0 installer migration. The Jython installer has been retired.
 
-    # Authenticity (not just integrity): sign the archive with a private RSA key held
-    # only as a repo secret. The installer verifies the matching PUBLIC key, so a
-    # tampered archive + matching hash is no longer enough to pass — the attacker
-    # would also need the private key.
-    #
-    # One-time setup by a maintainer:
-    #   1. Generate a keypair (PKCS#8 private, X.509/SPKI public):
-    #        openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out private.pem
-    #        openssl rsa -in private.pem -pubout -out public.pem
-    #   2. Add the contents of private.pem as the repo secret RELEASE_SIGNING_PRIVATE_KEY.
-    #   3. Paste the contents of public.pem into RELEASE_PUBLIC_KEY_PEM in
-    #      jython_scripts/install_python.py.
-    - name: Sign archive
-      shell: pwsh
-      env:
-        RELEASE_SIGNING_PRIVATE_KEY: ${{ secrets.RELEASE_SIGNING_PRIVATE_KEY }}
-      run: |
-        $archiveName = "${{ env.ARCHIVE_NAME }}"
-        $sigName = "$archiveName.sig"
+            ### Install or migrate
 
-        if ([string]::IsNullOrWhiteSpace($env:RELEASE_SIGNING_PRIVATE_KEY)) {
-          Write-Error "RELEASE_SIGNING_PRIVATE_KEY is required. Refusing to publish an unsigned release."
-          exit 1
-        }
+            1. Download `PythonCWMS-Installer.zip`.
+            2. Extract it.
+            3. Double-click `Install-PythonCWMS.cmd`.
 
-        $rsa = [System.Security.Cryptography.RSA]::Create()
-        $archiveStream = $null
-        try {
-          $rsa.ImportFromPem($env:RELEASE_SIGNING_PRIVATE_KEY)
-          $archiveStream = [System.IO.File]::OpenRead($archiveName)
-          $sig = $rsa.SignData(
-            $archiveStream,
-            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
-        } finally {
-          if ($null -ne $archiveStream) { $archiveStream.Dispose() }
-          $rsa.Dispose()
-        }
-        [System.IO.File]::WriteAllBytes($sigName, $sig)
+            The default location is `%LOCALAPPDATA%\Programs\pythonCWMS`. Existing installations are never deleted. For an upgrade, run the PowerShell installer with `-Force`; the previous exact target is retained as a timestamped backup.
 
-        $installerSource = Get-Content "jython_scripts\install_python.py" -Raw
-        $keyMatch = [regex]::Match(
-          $installerSource,
-          '(?s)RELEASE_PUBLIC_KEY_PEM\s*=\s*"""(?<pem>.*?)"""')
-        if (-not $keyMatch.Success) {
-          Write-Error "Could not find the embedded release public key in the installer."
-          exit 1
-        }
+            Release v1.11 cannot be used by the new installer because it has no detached signature asset. Do not modify the historical v1.11 release.
 
-        $publicRsa = [System.Security.Cryptography.RSA]::Create()
-        $verifyStream = $null
-        try {
-          $publicRsa.ImportFromPem($keyMatch.Groups['pem'].Value.Trim())
-          $verifyStream = [System.IO.File]::OpenRead($archiveName)
-          $verified = $publicRsa.VerifyData(
-            $verifyStream,
-            $sig,
-            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
-        } finally {
-          if ($null -ne $verifyStream) { $verifyStream.Dispose() }
-          $publicRsa.Dispose()
-        }
-        if (-not $verified) {
-          Write-Error "The signing private key does not match the public key embedded in the installer."
-          exit 1
-        }
-
-        Write-Host "✓ Wrote detached signature: $sigName ($($sig.Length) bytes)"
-        Write-Host "✓ Verified signature with the installer's embedded public key"
-        echo "SIGNATURE_NAME=$sigName" >> $env:GITHUB_ENV
-
-    - name: Prepare config JSON
-      run: |
-        $repoOwner = "${{ github.repository_owner }}"
-        $repoName = "${{ github.event.repository.name }}"
-        $version = "${{ env.VERSION }}"
-        $archiveName = "${{ env.ARCHIVE_NAME }}"
-        $hash = "${{ env.ARCHIVE_HASH }}"
-        $releaseTag = "${{ env.RELEASE_TAG }}"
-        $winpythonSubDir = "${{ env.WINPYTHON_SUBDIR }}"
-
-        Write-Host "Updating configuration file..."
-
-        if (Test-Path "pythonCWMS_config.json") {
-          $config = Get-Content "pythonCWMS_config.json" | ConvertFrom-Json
-          Write-Host "✓ Found existing config file"
-        } else {
-          $config = @{}
-          Write-Host "⚠️ No existing config file, creating new one"
-        }
-
-        $config.python_download_url = "https://github.com/$repoOwner/$repoName/releases/download/$releaseTag/$archiveName"
-        $config.python_expected_hash_sha256 = $hash
-
-        $signatureName = "${{ env.SIGNATURE_NAME }}"
-        if ([string]::IsNullOrWhiteSpace($signatureName)) {
-          Write-Error "SIGNATURE_NAME is empty. Refusing to publish an unsigned configuration."
-          exit 1
-        }
-        $config.python_signature_url = "https://github.com/$repoOwner/$repoName/releases/download/$releaseTag/$signatureName"
-
-        $config.default_install_directory = "C:\hec\python"
-        $config.default_env_var_name = "PYTHON_CWMS_HOME"
-        $config.python_exe_sub_directory = "pythonCWMS\python"
-        $config.version = $version
-        $config.archive_filename = $archiveName
-        $config.archive_size_mb = [math]::Round((Get-Item $archiveName).Length / 1MB, 2)
-        $config.created_date = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
-        $config.source_winpython_version = "${{ env.WINPYTHON_VERSION }}"
-        $config.source_winpython_filename = "${{ env.WINPYTHON_FILENAME }}"
-
-        $configJson = $config | ConvertTo-Json -Depth 10
-        $configJson | Out-File -FilePath "pythonCWMS_config.json" -Encoding UTF8
-
-        Write-Host "✓ Updated config file:"
-        Get-Content "pythonCWMS_config.json"
-
-        Copy-Item -Path "pythonCWMS_config.json" -Destination "${{ env.FINAL_DIR }}\pythonCWMS_config.json"
-        Write-Host "✓ Copied config file to final directory"
-
-    - name: Validate config file
-      run: |
-        Write-Host "Validating configuration file..."
-        try {
-          $config = Get-Content "pythonCWMS_config.json" | ConvertFrom-Json
-          Write-Host "✓ Config JSON is valid"
-          Write-Host "✓ Download URL: $($config.python_download_url)"
-          Write-Host "✓ Hash: $($config.python_expected_hash_sha256)"
-          Write-Host "✓ Python exe path: $($config.python_exe_sub_directory)"
-          Write-Host "✓ Source WinPython: $($config.source_winpython_filename)"
-          Write-Host "✓ Archive size: $($config.archive_size_mb) MB"
-        }
-        catch {
-          Write-Error "❌ Config JSON is invalid: $_"
-          exit 1
-        }
-
-    - name: Create Release
-      uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
-      with:
-        tag_name: ${{ env.RELEASE_TAG }}
-        name: Python CWMS ${{ env.VERSION }}
-        draft: false
-        prerelease: false
-        files: |
-          ${{ env.ARCHIVE_NAME }}
-          ${{ env.SIGNATURE_NAME }}
-          pythonCWMS_config.json
-        body: |
-          ## Python CWMS ${{ env.VERSION }}
-
-          Portable Python environment with CWMS libraries and dependencies.
-
-          ### Downloads:
-          - **`${{ env.ARCHIVE_NAME }}`** - Main Python environment archive (${{ env.ARCHIVE_SIZE_MB }} MB)
-          - **`pythonCWMS_config.json`** - Configuration file for automated installers
-
-          ### Archive Details:
-          - **Size:** ${{ env.ARCHIVE_SIZE_MB }} MB
-          - **SHA256:** `${{ env.ARCHIVE_HASH }}`
-          - **Source:** ${{ env.WINPYTHON_FILENAME }}
-
-          ### Contents:
-          - WinPython (from ${{ env.WINPYTHON_VERSION }})
-          - Libraries from `requirements/base_requirements.txt`
-          - Libraries from `requirements/supplemental_requirements.txt`
-          - Custom setup and configuration
-
-          ### Usage:
-          1. Extract the .7z file to your desired location
-          2. Run `${{ env.FINAL_DIR }}\WinPython Command Prompt.exe`
-          3. Your environment is ready to use!
-
-          ### For Automated Installation:
-          Use the `pythonCWMS_config.json` file with your installer scripts.
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Publish config to main
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add pythonCWMS_config.json
-
-        if (-not (git diff --staged --quiet)) {
-          git commit -m "Update config for release ${{ env.VERSION }} [skip ci]"
-          git push origin HEAD:main
-          Write-Host "✓ Updated and committed config file after publishing release assets"
-        } else {
-          Write-Host "No changes to config file"
-        }
+            Archive: `${{ env.ARCHIVE_NAME }}` (${{ env.ARCHIVE_SIZE_MB }} MB)
+            SHA-256: `${{ env.ARCHIVE_HASH }}`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

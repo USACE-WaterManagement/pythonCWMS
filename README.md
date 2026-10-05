@@ -1,82 +1,71 @@
 # Python CWMS Portable Environment
 
-A portable, Windows, Python environment bundled with CWMS libraries and dependencies.
+A portable Windows CPython 3.13 environment with CWMS libraries and their dependencies already installed.
 
-## What's Included
+## Install
 
-- **WinPython 3.13.11.0**: Portable Python distribution
-- **Pre-installed Libraries**: All dependencies from requirements files
-- **Custom Configuration**: CWMS-specific setup and utilities
-- **Jython installer script**: An installer that will download this python from the CWMS-RTS and setup user environment variables.
+The first release that supports the Windows installer is **v2.0**. Release v1.11 cannot be installed this way because it has no detached signature asset; a new signed v2.0 release must be published first. Do not modify the historical v1.11 release.
 
-## Quick Start
+1. Open the [latest release](https://github.com/USACE-WaterManagement/pythonCWMS/releases/latest).
+2. Download `PythonCWMS-Installer.zip`.
+3. Extract the installer ZIP.
+4. Double-click `Install-PythonCWMS.cmd`.
 
-### Download and Installation
-Open the script editor in RTS or in HEC-DSS.
+The installer downloads the signed portable environment, verifies its SHA-256 hash and RSA signature, safely extracts it, and runs Python before changing an existing installation.
 
-![alt text](<screenshots/Screenshot 2026-05-18 060758.png>)
+The default installation directory is:
 
-Make a new script in RTS or HEC-DSS called `install_python`.
+```text
+%LOCALAPPDATA%\Programs\pythonCWMS
+```
 
-![alt text](<screenshots/Screenshot 2026-05-18 061255.png>)
-![alt text](screenshots/image-3.png)
+To select another directory, open Command Prompt in the extracted installer directory and run:
 
+```bat
+Install-PythonCWMS.cmd -InstallRoot "D:\Tools\pythonCWMS"
+```
 
-Go to the [install_python.py](./jython_scripts/install_python.py) script in the `jython_scripts` folder and copy the raw script.
-![alt text](./screenshots/image-1.png)
+### Upgrade and backups
 
-Paste the script into the script window.
+The installer stops if the target directory already exists. To upgrade the same target, use `-Force`:
 
-![alt text](<screenshots/Screenshot 2026-05-18 061427.png>)
+```bat
+Install-PythonCWMS.cmd -Force
+```
 
-Click `Save and Test` to launch the installer.
+Before installing, `-Force` renames the exact existing target to a timestamped sibling such as `pythonCWMS.backup-20261005-143000`. If installation fails, it restores that backup. After a successful installation the backup is retained and must be removed manually when no longer needed.
 
-![alt text](./screenshots/image-5.png)
+### Environment variables
 
-Click `Install Portable Python` to install. Please be patient, it may take up to 10 minutes to install.
+The installer uses .NET user-environment APIs to set:
 
-#### Failed to download configuration error
+- `PYTHON_CWMS_HOME` to `<InstallRoot>\python`
+- user `PATH` entries `%PYTHON_CWMS_HOME%` and `%PYTHON_CWMS_HOME%\Scripts`
 
-The installer defaults its `Config URL:` to the latest `pythonCWMS_config.json` on
-`main`, and it requires an `https://` URL for both the config and the Python archive.
-If you get a "Failed to download configuration" error (e.g. raw GitHub content is
-blocked on your network), point `Config URL:` at the `pythonCWMS_config.json` asset of
-a specific release instead (e.g. `https://github.com/USACE-WaterManagement/pythonCWMS/releases/download/v1.11/pythonCWMS_config.json`)
-and reload the configuration.
+The PATH update is idempotent. Open a new Command Prompt or restart applications after installation, then run `pythonCWMS --version`.
 
-Release signing is mandatory. The installer refuses any download that does not have a
-valid signature from the release key embedded in the script. An unsigned or tampered
-archive will not install.
+For VS Code, set:
 
-You can also just download the latest release file (e.g. `pythonCWMS1.01.7z` (https://github.com/USACE-WaterManagement/pythonCWMS/releases/)) and unzip the portable python distribution and setup your user environment variables yourself to add the python to your path.
+```json
+"python.defaultInterpreterPath": "${env:PYTHON_CWMS_HOME}\\python.exe"
+```
 
-### General Usage
-- Use `pythonCWMS` in the command line to run python.
-- Setup the default python in VsCode by pointing the []`python.defaultInterpreterPath`] (https://code.visualstudio.com/docs/python/settings-reference) to the installation directory (e.g. `C:\hec\python\pythonCWMS\python`). 
-- Run `WinPython Command Prompt.exe` for command line access
-- Run `WinPython Interpreter.exe` for Python IDLE
-- Or use `pythonCWMS.bat` for the custom CWMS environment
+If a workspace has retained another interpreter, run **Python: Clear Workspace Interpreter Setting** from the Command Palette.
 
-#### VS Code Use
-To have VS Code default to this portable python, open `Preferences: Open User Settings (JSON)` by pressing `Cntr+Shift+P` and searching for Preferences in the search bar at the top of VS Code.
-![alt text](./screenshots/vsCodeUserSettings.png)
+## Install additional libraries
 
-In your `settings.json` file, put in this  `"python.defaultInterpreterPath": "${env:PYTHON_CWMS_HOME}\\python.exe"` or this  `"python.defaultInterpreterPath": "C:\\hec\\python\\pythonCWMS\\python\\python.exe"`.
+Run packages through the installed interpreter:
 
-When working with a repo VSCode sometimes has trouble finding the interprator (e.g. python notebook w/ shared workspace). Try searching for `Python: Clear Workspace Interpreter Setting` by pressing `Cntr+Shift+P` and searching for Preferences in the search bar at the top of VS Code.
-![alt text](./screenshots/clearWorkspaceSetting.png)
+```bat
+pythonCWMS -m pip install package-name
+```
 
-#### Install additional libraries
-- To install additional libraries beyond what is in the [requirements_binary_only.txt](./requirements_binary_only.txt) file, open the WinPython powershell included in your python (e.g. `C:\hec\python\pythonCWMS\WinPython Powershell Prompt.exe`) and do a pip install from there.
+Packages included in releases are defined by [base requirements](requirements/base_requirements.txt) and [supplemental requirements](requirements/supplemental_requirements.txt), then resolved into the hash-pinned [Windows lock](requirements/locked.txt).
 
-- The command `pythonCWMS -m pip install my_package_to_install` will also work
+## RTS and HEC-DSS scripts
 
-### RTS Python Script Usage
- To use the python environment in the RTS, a jython launcher script is used to run the python script as a subprocess. The jython script can also pass arguments to the python script.
+Jython is still used as a launcher inside RTS and HEC-DSS. Edit `python_script_path` and `args` in [example_python_script_launcher.py](jython_scripts/example_python_script_launcher.py). Set `args` to `None` or an empty string when no arguments are needed; multiple arguments are split before launching CPython.
 
-- To run a python script in the RTS, edit the `python_script_path` and `args` variables in the [`example_python_script_launcher.py`](./jython_scripts/example_python_script_launcher.py) jython script to point to your python script and save in the RTS script editor. You can pass arguments from your jython environment (e.g. watershed path etc...), but this is optional. Leave `args` as `None` or `''` if arguments are not needed.
-- Output of the python script will be passed to the RTS console after the process is completed. 
+The former Jython installer now only shows migration instructions and may open the releases page. It never downloads, installs, deletes, or modifies files. Saved copies of the old installer are also stopped by the retirement document at the root of `main`.
 
-## To help maintain the python builds 
-
-See [`CONTRIBUTING.md`](CONTRIBUTING.md)
+See [CONTRIBUTING.md](CONTRIBUTING.md) for release maintenance.

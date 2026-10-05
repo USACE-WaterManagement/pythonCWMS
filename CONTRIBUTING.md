@@ -1,62 +1,59 @@
-# Python CWMS Portable Environment
+# Maintaining Python CWMS releases
 
-A portable, Windows, Python environment bundled with CWMS libraries and dependencies.
+GitHub Actions builds the complete portable environment. User machines only download, verify, extract, smoke test, and configure that finished environment.
 
-## To Update Python Build
+## Dependency changes
 
-### Build Locally
-1. Clone this repository
-2. Optionally, modify WinPython variables (`WINPYTHON_VERSION`, `WINPYTHON_FILENAME`, and `WINPYTHON_DOWNLOAD_URL`) in the [release.yml](.github\workflows\release.yml) if upgrading python.
-   - **When you change `WINPYTHON_DOWNLOAD_URL`, also update `WINPYTHON_SHA256`** to the known-good hash of the new file. The build fails if the download does not match. Confirm the value against the upstream WinPython release page.
-3. Modify `supplemental_requirements.txt` with your dependencies
-4. Push a tag to trigger the build: `git tag v0.8` and `git push origin v0.8`
+Edit [requirements/base_requirements.txt](requirements/base_requirements.txt) or [requirements/supplemental_requirements.txt](requirements/supplemental_requirements.txt), then regenerate the Windows CPython 3.13 lock from **both** inputs with the pinned tool and binary-only resolution:
 
-The release workflow commits the updated `pythonCWMS_config.json` to `main` after each
-build, and the installer's default `Config URL` tracks that file, so installers pick up
-the latest release automatically.
-
-## Security Setup (maintainers)
-
-### Release signing (authenticity)
-The SHA-256 check only proves a download was not corrupted; it does **not** prove the
-file is genuine, because the config supplies both the URL and the expected hash. To
-add real authenticity, the workflow signs each archive with an RSA private key and the
-installer verifies it against an embedded public key.
-
-Before the next release, store the private key matching the public key embedded in
-[`jython_scripts/install_python.py`](jython_scripts/install_python.py) as the repository
-secret `RELEASE_SIGNING_PRIVATE_KEY`. The workflow fails rather than publishing an
-unsigned release, and it verifies that the private key matches the embedded public key.
-
-The current private key is generated outside the repository and must never be committed.
-To rotate the keypair:
-1. Generate a replacement keypair:
-   ```
-   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out private.pem
-   openssl rsa -in private.pem -pubout -out public.pem
-   ```
-2. Replace the repo secret `RELEASE_SIGNING_PRIVATE_KEY` with `private.pem`.
-3. Replace `RELEASE_PUBLIC_KEY_PEM` with `public.pem` in
-   [`jython_scripts/install_python.py`](jython_scripts/install_python.py).
-4. Publish a signed release immediately after merging the public-key change. Installers
-   refuse unsigned releases and signatures made with any other key.
-
-### Hash-pinned dependencies (supply chain)
-The workflow installs only binary wheels from the required, hash-pinned lock. Wheels
-still contain executable code, so hashes and review of requirement changes both matter.
-After changing either input requirements file, regenerate and commit the Windows lock:
-```
+```powershell
 python -m pip install uv==0.12.22
-uv pip compile --python-platform windows --python-version 3.13 ^
-  --generate-hashes --only-binary :all: --output-file requirements/locked.txt ^
-  requirements/base_requirements.txt requirements/supplemental_requirements.txt
+python -m uv pip compile `
+  --python-platform windows `
+  --python-version 3.13 `
+  --upgrade `
+  --generate-hashes `
+  --only-binary :all: `
+  --output-file requirements/locked.txt `
+  requirements/base_requirements.txt `
+  requirements/supplemental_requirements.txt
 ```
-The build fails if `requirements/locked.txt` is missing or if a locked artifact hash
-does not match.
 
-### Manual Build
-You can also trigger a build manually from the Actions tab.
+Commit [requirements/locked.txt](requirements/locked.txt). The release workflow regenerates it and fails if its resolved body differs, installs with `--require-hashes --only-binary=:all:`, and verifies every directly requested version after installation.
 
-## Requirements File
+## Release signing
 
-The `base_requirements.txt` file contains Python packages to be  installed with compatable versions in CWMS batch. The `supplemental_requirements.txt` file contains additional packages that may be useful.
+The repository secret `RELEASE_SIGNING_PRIVATE_KEY` must contain the PKCS#8 RSA private key matching `$ReleasePublicKeyPem` in [Install-PythonCWMS.ps1](installer/Install-PythonCWMS.ps1). The private key must never be committed.
+
+To rotate the key:
+
+```text
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out private.pem
+openssl rsa -in private.pem -pubout -out public.pem
+```
+
+Update the repository secret and embedded public key together. The workflow signs the completed ZIP and verifies that the secret matches the installer's embedded key before publishing.
+
+## WinPython updates
+
+When changing `WINPYTHON_DOWNLOAD_URL` in [.github/workflows/release.yml](.github/workflows/release.yml), also update `WINPYTHON_FILENAME`, `WINPYTHON_VERSION`, and the independently verified `WINPYTHON_SHA256` value.
+
+The workflow relocates the finished environment before testing imports and `pythonCWMS --version`, scans portable configuration files for GitHub-runner paths, creates a standard ZIP, and publishes:
+
+- `pythonCWMS<VERSION>.zip`
+- `pythonCWMS<VERSION>.zip.sig`
+- a generated release-only `pythonCWMS_config.json`
+- `PythonCWMS-Installer.zip`
+
+It does not overwrite the root [pythonCWMS_config.json](pythonCWMS_config.json), which must remain the legacy Jython retirement document.
+
+## First installer release
+
+This migration is breaking, so the next release is v2.0, not v1.12. Merge these changes to `main`, confirm the Windows installer checks pass, confirm the signing secret is configured, then create the release with:
+
+```bash
+git tag -a v2.0 -m "Python CWMS 2.0"
+git push origin v2.0
+```
+
+The workflow generates `pythonCWMS2.0.zip` and v2.0 configuration metadata. Its release notes include migration instructions. Never modify the historical v1.11 release.

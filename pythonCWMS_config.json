@@ -1,14 +1,6 @@
 {
-  "python_download_url": "https://github.com/USACE-WaterManagement/pythonCWMS/releases/download/v1.11/pythonCWMS1.11.7z",
-  "python_expected_hash_sha256": "16ABFD6DD419858A95F5DE202E6A1F5F6BD2CCF492C48796BE51E019E309AC80",
-  "python_signature_url": "",
-  "default_install_directory": "C:\\hec\\python",
-  "default_env_var_name": "PYTHON_CWMS_HOME",
-  "python_exe_sub_directory": "pythonCWMS\\python",
-  "version": "1.11",
-  "archive_filename": "pythonCWMS1.11.7z",
-  "archive_size_mb": 134.14,
-  "created_date": "2026-05-18T11:34:09Z",
-  "source_winpython_version": "WinPython 3.13.11.0dot",
-  "source_winpython_filename": "WinPython64-3.13.11.0dot_post1.zip"
+  "status": "installer-retired",
+  "latest_version": "2.0",
+  "message": "The Jython installer was retired in Python CWMS 2.0.",
+  "installer_url": "https://github.com/USACE-WaterManagement/pythonCWMS/releases/latest/download/PythonCWMS-Installer.zip"
 }

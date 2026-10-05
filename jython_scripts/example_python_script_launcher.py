@@ -1,4 +1,5 @@
 import os
+import shlex
 import subprocess
 
 # path to your python script
@@ -41,12 +42,11 @@ else:
 # 5. Subprocess Call (only if the above test succeeds)
 if return_code_os_system == 0:
     python_executable = pythoncwms_path  # Use the constructed path
-    
 
     cmd = [python_executable, python_script_path]
-    if not args or args != '':
-    	cmd.append(args)
-    	
+    if args:
+        cmd.extend(shlex.split(args))
+
     print("Executing command:", cmd)
 
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
