@@ -19,7 +19,7 @@ python -m uv pip compile `
   requirements/supplemental_requirements.txt
 ```
 
-Commit [requirements/locked.txt](requirements/locked.txt). The release workflow regenerates it and fails if its resolved body differs, installs with `--require-hashes --only-binary=:all:`, and verifies every directly requested version after installation.
+Commit [requirements/locked.txt](requirements/locked.txt). The release workflow resolves both inputs under the committed pins and fails if the package or hash body differs, installs with `--require-hashes --only-binary=:all:`, and verifies every directly requested version after installation.
 
 ## Release signing
 

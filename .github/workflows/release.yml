@@ -60,14 +60,15 @@ jobs:
             --upgrade `
             --generate-hashes `
             --only-binary :all: `
+            --constraint requirements/locked.txt `
             --output-file $generated `
             requirements/base_requirements.txt `
             requirements/supplemental_requirements.txt
           if ($LASTEXITCODE -ne 0) { throw 'Could not regenerate the Windows CPython 3.13 lock.' }
 
-          # Ignore uv's command comment because its output path is intentionally temporary.
-          $committedBody = (Get-Content requirements/locked.txt | Select-Object -Skip 2) -join "`n"
-          $generatedBody = (Get-Content $generated | Select-Object -Skip 2) -join "`n"
+          # Constraints keep verification reproducible; annotations differ because of the constraint source.
+          $committedBody = (Get-Content requirements/locked.txt | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+          $generatedBody = (Get-Content $generated | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
           if ($committedBody -cne $generatedBody) {
             throw 'requirements/locked.txt is stale. Regenerate it from both input requirement files.'
           }
