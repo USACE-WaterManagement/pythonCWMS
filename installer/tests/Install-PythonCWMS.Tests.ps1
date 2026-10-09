@@ -205,11 +205,12 @@ try {
             $lockProcess.WaitForExit()
         }
     }
+    $normalizedOutput = $result.Output -replace '\s+', ' '
     Assert-True ($result.ExitCode -ne 0 -and
         (Test-Path (Join-Path $inUseTarget 'marker.txt')) -and
-        $result.Output -match 'may still be in use' -and
-        $result.Output -match 'Close all Python CWMS sessions' -and
-        $result.Output -match 'existing installation was not changed') "In-use installation guidance was not shown: $($result.Output)"
+        $normalizedOutput -match 'may still be in use' -and
+        $normalizedOutput -match 'Close all Python CWMS sessions' -and
+        $normalizedOutput -match 'existing installation was not changed') "In-use installation guidance was not shown: $($result.Output)"
     Write-Host 'PASS: in-use installation guidance'
 
     [Environment]::SetEnvironmentVariable('PYTHON_CWMS_HOME', $OldHome, $EnvironmentTarget)
