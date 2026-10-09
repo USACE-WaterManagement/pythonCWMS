@@ -473,7 +473,12 @@ try {
             $backupPath = "$backupPath-$([System.Guid]::NewGuid().ToString('N').Substring(0, 8))"
         }
         Write-Host "Moving the existing installation to: $backupPath"
-        [System.IO.Directory]::Move($InstallRoot, $backupPath)
+        try {
+            [System.IO.Directory]::Move($InstallRoot, $backupPath)
+        }
+        catch {
+            throw "Python CWMS could not be upgraded because Windows could not move the existing installation at '$InstallRoot'. It may still be in use. Close all Python CWMS sessions and applications that may be using it, including terminals, Jupyter notebooks, and VS Code, then run the installer again. The existing installation was not changed. Windows reported: $($_.Exception.Message)"
+        }
     }
 
     # Copy out of staging instead of renaming it. Endpoint protection can briefly

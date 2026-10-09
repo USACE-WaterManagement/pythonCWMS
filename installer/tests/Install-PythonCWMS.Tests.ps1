@@ -190,6 +190,28 @@ try {
         (Test-Path (Join-Path $promptBackup[0].FullName 'marker.txt'))) "Confirmed fixture replacement failed: $($result.Output)"
     Write-Host 'PASS: existing-directory replacement defaults to yes'
 
+    $inUseTarget = Join-Path $TestRoot 'in-use-target'
+    [IO.Directory]::CreateDirectory($inUseTarget) | Out-Null
+    [IO.File]::WriteAllText((Join-Path $inUseTarget 'marker.txt'), 'preserve')
+    $lockProcess = Start-Process powershell.exe -ArgumentList @(
+        '-NoLogo', '-NoProfile', '-Command', 'Start-Sleep -Seconds 60'
+    ) -WorkingDirectory $inUseTarget -WindowStyle Hidden -PassThru
+    try {
+        $result = Invoke-InstallerTest $config $inUseTarget -Force
+    }
+    finally {
+        if (-not $lockProcess.HasExited) {
+            Stop-Process -Id $lockProcess.Id -Force
+            $lockProcess.WaitForExit()
+        }
+    }
+    Assert-True ($result.ExitCode -ne 0 -and
+        (Test-Path (Join-Path $inUseTarget 'marker.txt')) -and
+        $result.Output -match 'may still be in use' -and
+        $result.Output -match 'Close all Python CWMS sessions' -and
+        $result.Output -match 'existing installation was not changed') "In-use installation guidance was not shown: $($result.Output)"
+    Write-Host 'PASS: in-use installation guidance'
+
     [Environment]::SetEnvironmentVariable('PYTHON_CWMS_HOME', $OldHome, $EnvironmentTarget)
     [Environment]::SetEnvironmentVariable('Path', $OldPath, $EnvironmentTarget)
 
