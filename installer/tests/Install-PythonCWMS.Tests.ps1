@@ -217,10 +217,11 @@ try {
     [Environment]::SetEnvironmentVariable('Path', $OldPath, $EnvironmentTarget)
 
     $legacyHome = Join-Path $TestRoot 'legacy\pythonCWMS\python'
+    $preservedFirstEntry = Join-Path $TestRoot 'existing-bin'
     $pathBeforeMigration = [Environment]::GetEnvironmentVariable('Path', $EnvironmentTarget)
     [Environment]::SetEnvironmentVariable('PYTHON_CWMS_HOME', $legacyHome, $EnvironmentTarget)
     [Environment]::SetEnvironmentVariable(
-        'Path', "$legacyHome;$legacyHome\Scripts;$pathBeforeMigration", $EnvironmentTarget)
+        'Path', "$legacyHome;$legacyHome\Scripts;$preservedFirstEntry;$pathBeforeMigration", $EnvironmentTarget)
 
     $successTarget = Join-Path $TestRoot 'success-target'
     $result = Invoke-InstallerTest $config $successTarget
@@ -243,10 +244,11 @@ try {
     $scriptsEntries = @($userPathParts | Where-Object { $_.TrimEnd([char[]]'\') -eq '%PYTHON_CWMS_HOME%\Scripts' })
     $legacyEntries = @($userPathParts | Where-Object { $_.TrimEnd([char[]]'\') -like "$legacyHome*" })
     Assert-True ($pathKind -eq [Microsoft.Win32.RegistryValueKind]::ExpandString) 'User PATH does not preserve environment-variable expansion.'
-    Assert-True ($userPathParts[0] -eq '%PYTHON_CWMS_HOME%' -and $userPathParts[1] -eq '%PYTHON_CWMS_HOME%\Scripts') 'Python CWMS entries are not first in the user PATH.'
+    Assert-True ($userPathParts[0] -eq $preservedFirstEntry) 'The first literal PATH entry was not preserved for the Windows list editor.'
+    Assert-True ($userPathParts[1] -eq '%PYTHON_CWMS_HOME%' -and $userPathParts[2] -eq '%PYTHON_CWMS_HOME%\Scripts') 'Python CWMS entries are not immediately after the first literal PATH entry.'
     Assert-True ($homeEntries.Count -eq 1 -and $scriptsEntries.Count -eq 1) 'PATH entries are not idempotent.'
     Assert-True ($legacyEntries.Count -eq 0) 'Legacy Python CWMS PATH entries were not removed.'
-    Write-Host 'PASS: PATH migration and idempotent updates'
+    Write-Host 'PASS: GUI-safe PATH migration and idempotent updates'
 
     $cleanupParent = Join-Path $TestRoot 'cleanup-fixture'
     $cleanupBundle = Join-Path $cleanupParent 'PythonCWMS-Installer'
