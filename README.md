@@ -66,9 +66,15 @@ pythonCWMS -m pip install package-name
 
 Packages included in releases are defined by [base requirements](requirements/base_requirements.txt) and [supplemental requirements](requirements/supplemental_requirements.txt), then resolved into the hash-pinned [Windows lock](requirements/locked.txt).
 
-## RTS and HEC-DSS scripts
+## RTS scripts
 
-Jython is still used as a launcher inside RTS and HEC-DSS. Edit `python_script_path` and `args` in [example_python_script_launcher.py](jython_scripts/example_python_script_launcher.py). Set `args` to `None` or an empty string when no arguments are needed; multiple arguments are split before launching CPython.
+Jython is still used inside RTS to launch external CPython processes. Configure
+the `SCRIPTS` list in
+[example_python_script_launcher.py](jython_scripts/example_python_script_launcher.py)
+to provide a script menu, editable arguments, optional CDA credentials, and an optional snapshot of the active RTS forecast context. The launcher is
+RTS-specific and does not run in HEC-DSSVue.
+
+See the [RTS launcher guide](jython_scripts/README.md#rts-cpython-launcher) for configuration, child-process environment variables, security considerations, and troubleshooting.
 
 Do not use the former Jython `install_python.py` workflow to install Python CWMS. The file remains as a compatibility notice for old bookmarks, while the signed Windows installer is documented in the [Jython migration guide](jython_scripts/README.md). Saved copies of the old installer are also stopped by the retirement document at the root of `main`.
 
