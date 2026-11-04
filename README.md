@@ -46,7 +46,7 @@ The installer uses .NET user-environment APIs to set:
 - `PYTHON_CWMS_HOME` to `<InstallRoot>\python`
 - user `PATH` entries `%PYTHON_CWMS_HOME%` and `%PYTHON_CWMS_HOME%\Scripts`
 
-The PATH update is idempotent and removes entries from older Python CWMS installations. Close all Command Prompt, PowerShell, Windows Terminal, and VS Code windows after installation, then open a new terminal and run `pythonCWMS --version`.
+The PATH update is idempotent, removes entries from older Python CWMS installations, and preserves an existing literal entry first so Windows retains its multi-entry PATH editor. Close all Command Prompt, PowerShell, Windows Terminal, and VS Code windows after installation, then open a new terminal and run `pythonCWMS --version`.
 
 For VS Code, set:
 

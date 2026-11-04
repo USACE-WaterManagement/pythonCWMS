@@ -271,10 +271,15 @@ function Set-UserEnvironment {
             }
         }
 
-        # Keep the managed interpreter ahead of WindowsApps and other user-level
-        # Python installations while preserving all unrelated PATH entries.
-        $parts.Insert(0, '%PYTHON_CWMS_HOME%\Scripts')
-        $parts.Insert(0, '%PYTHON_CWMS_HOME%')
+        # Windows 11 falls back to its legacy single-line PATH editor when the
+        # first entry starts with %VAR%. Keep an existing literal entry first
+        # while retaining variable-based Python CWMS entries.
+        $insertIndex = 0
+        if ($parts.Count -gt 0 -and -not $parts[0].TrimStart().StartsWith('%')) {
+            $insertIndex = 1
+        }
+        $parts.Insert($insertIndex, '%PYTHON_CWMS_HOME%')
+        $parts.Insert($insertIndex + 1, '%PYTHON_CWMS_HOME%\Scripts')
         $environmentKey.SetValue(
             'PYTHON_CWMS_HOME', $PythonHome, [Microsoft.Win32.RegistryValueKind]::String)
         $environmentKey.SetValue(
